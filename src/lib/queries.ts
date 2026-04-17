@@ -160,7 +160,7 @@ export function getAllMcAgents(): McAgent[] {
 
 // SQLite's datetime('now') returns "YYYY-MM-DD HH:MM:SS" in UTC with no timezone suffix.
 // JS parses that as local time and shifts it by the offset. Force UTC parse.
-function parseSqliteTs(ts: string): number {
+export function parseSqliteTs(ts: string): number {
   if (!ts) return 0;
   // Already ISO-with-timezone
   if (/[TZ]/.test(ts) || /[+-]\d\d:?\d\d$/.test(ts)) return new Date(ts).getTime();
@@ -521,12 +521,12 @@ export function getReviewQueue(): ReviewItem[] {
       summary: '',
       agent: a.owner,
       agent_emoji: '',
-      created_at: a.created_at,
+      created_at: new Date(parseSqliteTs(a.created_at)).toISOString(),
       url: a.serve_url,
     });
   }
 
-  return items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return items.sort((a, b) => parseSqliteTs(b.created_at) - parseSqliteTs(a.created_at));
 }
 
 // ----- Recent activity -----
@@ -561,11 +561,11 @@ export function getRecentActivity(limit: number = 20): ActivityEntry[] {
   // MC-originated activity
   const mcRows = db().prepare('SELECT * FROM mc_activity ORDER BY timestamp DESC LIMIT ?').all(limit) as Array<{ id: number; entity_type: string; entity_id: string; action: string; summary: string; timestamp: string }>;
   for (const r of mcRows) {
-    entries.push({ id: `mc-${r.id}`, entity_type: r.entity_type, entity_id: r.entity_id, action: r.action, summary: r.summary, timestamp: r.timestamp });
+    entries.push({ id: `mc-${r.id}`, entity_type: r.entity_type, entity_id: r.entity_id, action: r.action, summary: r.summary, timestamp: new Date(parseSqliteTs(r.timestamp)).toISOString() });
   }
 
   return entries
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .sort((a, b) => parseSqliteTs(b.timestamp) - parseSqliteTs(a.timestamp))
     .slice(0, limit);
 }
 

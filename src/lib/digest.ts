@@ -1,6 +1,6 @@
 import { getDb } from './db';
 import { ensureInit } from './init';
-import { getAllMcTasks, getAllMcFlows, getAllMcAgents, getReviewQueue } from './queries';
+import { getAllMcTasks, getAllMcFlows, getAllMcAgents, getReviewQueue, parseSqliteTs } from './queries';
 import { getRecentAlerts } from './alerts';
 import { getSettings } from './settings';
 import { sendTelegramDetailed } from './telegram';
@@ -24,7 +24,7 @@ export async function buildDigest(dateStr: string = new Date().toISOString().sli
   const stillActive = tasks.filter(t => t.status === 'active');
   const blocked = tasks.filter(t => t.status === 'blocked');
   const needsReview = getReviewQueue().slice(0, 10);
-  const recentAlerts = getRecentAlerts(20).filter(a => now - new Date(a.created_at).getTime() < dayMs);
+  const recentAlerts = getRecentAlerts(20).filter(a => now - parseSqliteTs(a.created_at) < dayMs);
 
   const lines: string[] = [];
   lines.push(`🛰️ *Morning Digest — ${dateStr}*`);
