@@ -4,6 +4,7 @@ import { getAllMcAgents, getAllProjects } from '@/lib/queries';
 import { timeAgo } from '@/lib/types';
 import DispatchForm from './DispatchForm';
 import StatusBadge from '@/components/StatusBadge';
+import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,10 +39,25 @@ export default function DispatchPage() {
     <div className="p-6 max-w-5xl">
       <div className="mb-6">
         <h1 className="text-xl font-semibold">Dispatch</h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mt-1">Send tasks to agents. Alfred and specialists poll this queue on heartbeat.</p>
+        <p className="text-sm text-[var(--color-text-secondary)] mt-1">Send tasks to agents. Tasks sit queued until the assigned agent polls MC.</p>
       </div>
 
       <DispatchForm agents={agents} projects={projects} />
+
+      {queued.length > 0 && (
+        <div className="mt-4 bg-amber-500/5 border border-amber-500/20 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <div className="text-amber-400 text-lg">⏳</div>
+            <div className="flex-1">
+              <div className="text-sm font-medium text-amber-400">Queued tasks waiting for pickup</div>
+              <div className="text-xs text-[var(--color-text-secondary)] mt-1">
+                Specialists don&apos;t auto-poll yet. To trigger pickup, message Alfred on Telegram: <span className="font-mono text-[var(--color-text-primary)]">&quot;Poll MC for queued tasks and delegate each to the assigned agent.&quot;</span>{' '}
+                Alfred will run <span className="font-mono text-[var(--color-text-primary)]">mc.sh poll &lt;agent_id&gt;</span> for each specialist and hand them off.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-8 space-y-6">
         <Section title={`Queued (${queued.length})`} color="text-amber-400">
@@ -78,17 +94,19 @@ function Empty({ text }: { text: string }) {
 }
 
 function DispatchCard({ row, agent, project }: { row: DispatchRow; agent?: { name: string; emoji: string }; project?: { name: string; color: string } }) {
+  const openclawLink = row.openclaw_task_id ? <Link href={`/tasks/${row.openclaw_task_id}`} className="text-xs text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] ml-2">View task →</Link> : null;
   return (
     <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-sm font-medium">{row.title}</span>
             <StatusBadge status={row.status} />
             <StatusBadge status={row.priority} />
+            {openclawLink}
           </div>
           {row.description && <p className="text-xs text-[var(--color-text-secondary)] mb-2 line-clamp-2">{row.description}</p>}
-          <div className="flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
+          <div className="flex items-center gap-3 text-xs text-[var(--color-text-muted)] flex-wrap">
             <span>{agent?.emoji ?? ''} {agent?.name ?? row.assignee_agent_id}</span>
             {project && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: project.color }} />{project.name}</span>}
             <span>Created {timeAgo(row.created_at)}</span>
