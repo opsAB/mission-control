@@ -408,6 +408,198 @@ export interface McFlowStep {
   error: string | null;
 }
 
+export interface FlowTimelineEvent {
+  ts: string;                       // ISO
+  actor: string;                    // display name (Alex / Alfred / James / Mission Control)
+  actor_emoji?: string;
+  icon: string;                     // single glyph
+  iconColor: string;                // tailwind class
+  text: string;                     // one-line sentence
+  details?: string;                 // optional expandable body
+  link?: { href: string; label: string };
+}
+
+// Assemble a granular timeline for a flow run by weaving together four
+// sources that OpenClaw and MC separately record:
+//   1. flow_runs (create / end)                 — OpenClaw
+//   2. task_runs for children (spawn/start/end) — OpenClaw
+//   3. mc_dispatched_tasks + mc_activity        — MC (dispatch lifecycle)
+//   4. artifacts linked by dispatch_id          — MC (deliverables)
+// We correlate #3 and #4 to the flow by matching agent_id against the child
+// task's agent and by timestamp falling inside the flow's [start, end + 30s]
+// window. Imperfect in the pathological case of two dispatches to the same
+// agent overlapping a single flow, but clean in all real cases we have.
+export function getFlowTimeline(flowId: string): FlowTimelineEvent[] {
+  const bundle = getMcFlowById(flowId);
+  if (!bundle) return [];
+  const { flow, steps } = bundle;
+
+  const agentMap = new Map(oc.getOpenClawAgents().map(a => [a.id, a]));
+  const childAgentIds = new Set(steps.map(s => s.agent_id).filter((x): x is string => !!x));
+
+  const startMs = new Date(flow.created_at).getTime();
+  const endMs = flow.ended_at ? new Date(flow.ended_at).getTime() : Date.now();
+  const windowEnd = endMs + 30_000;
+
+  const events: FlowTimelineEvent[] = [];
+  const displayName = (id: string | null): string => {
+    if (!id) return 'Unknown';
+    if (id === 'main') return 'Alfred';
+    if (id === 'mission-control' || id === 'mc' || id === 'system') return 'Mission Control';
+    return agentMap.get(id)?.name ?? (id.charAt(0).toUpperCase() + id.slice(1));
+  };
+  const emojiOf = (id: string | null): string | undefined => id ? agentMap.get(id)?.emoji : undefined;
+
+  // 1. Flow opened
+  events.push({
+    ts: flow.created_at,
+    actor: displayName(flow.agent_id),
+    actor_emoji: emojiOf(flow.agent_id),
+    icon: '◆',
+    iconColor: 'text-purple-400',
+    text: `Alfred opened the flow "${flow.name}"`,
+  });
+
+  // 2. Per-child task events
+  for (const s of steps) {
+    events.push({
+      ts: s.created_at,
+      actor: displayName(flow.agent_id),
+      actor_emoji: emojiOf(flow.agent_id),
+      icon: '⇢',
+      iconColor: 'text-sky-400',
+      text: `Alfred spawned ${displayName(s.agent_id)} as a sub-agent`,
+      details: s.full_task.slice(0, 600),
+    });
+    if (s.started_at) {
+      events.push({
+        ts: s.started_at,
+        actor: displayName(s.agent_id),
+        actor_emoji: emojiOf(s.agent_id),
+        icon: '●',
+        iconColor: 'text-indigo-400',
+        text: `${displayName(s.agent_id)} started working`,
+      });
+    }
+    if (s.ended_at) {
+      events.push({
+        ts: s.ended_at,
+        actor: displayName(s.agent_id),
+        actor_emoji: emojiOf(s.agent_id),
+        icon: s.status === 'done' ? '✓' : s.status === 'blocked' ? '✕' : '◯',
+        iconColor: s.status === 'done' ? 'text-emerald-400' : 'text-amber-400',
+        text: `${displayName(s.agent_id)} finished the sub-agent run`,
+        details: s.terminal_summary ?? undefined,
+      });
+    }
+  }
+
+  // 3. MC dispatch + activity events overlapping the flow, attributed to a
+  //    child agent. We include the dispatch creation even if it's shortly
+  //    before the flow started (Alex pressing Dispatch precedes Alfred
+  //    waking up).
+  const db_ = db();
+  const activityRows = db_.prepare(`
+    SELECT id, entity_type, entity_id, action, agent_id, summary, timestamp
+    FROM mc_activity
+    WHERE entity_type IN ('dispatch','task')
+      AND agent_id IS NOT NULL
+    ORDER BY timestamp ASC
+  `).all() as Array<{ id: number; entity_type: string; entity_id: string; action: string; agent_id: string; summary: string; timestamp: string }>;
+
+  const windowStart = startMs - 5 * 60_000; // 5min buffer before the flow
+  const relatedDispatchIds = new Set<string>();
+  for (const r of activityRows) {
+    const t = parseSqliteTs(r.timestamp);
+    if (t < windowStart || t > windowEnd) continue;
+    if (!childAgentIds.has(r.agent_id)) continue;
+    if (r.entity_type === 'dispatch') relatedDispatchIds.add(r.entity_id);
+    const iconMap: Record<string, { icon: string; color: string }> = {
+      picked_up: { icon: '→', color: 'text-sky-400' },
+      in_progress: { icon: '●', color: 'text-indigo-400' },
+      done: { icon: '✓', color: 'text-emerald-400' },
+      failed: { icon: '✕', color: 'text-red-400' },
+      note: { icon: '✎', color: 'text-[var(--color-text-muted)]' },
+    };
+    const i = iconMap[r.action] ?? { icon: '·', color: 'text-[var(--color-text-muted)]' };
+    const verb = r.action === 'picked_up'   ? 'picked up the dispatch'
+               : r.action === 'in_progress' ? 'reported progress'
+               : r.action === 'done'        ? 'marked the dispatch done'
+               : r.action === 'failed'      ? 'marked the dispatch failed'
+               : r.action;
+    events.push({
+      ts: new Date(t).toISOString(),
+      actor: displayName(r.agent_id),
+      actor_emoji: emojiOf(r.agent_id),
+      icon: i.icon,
+      iconColor: i.color,
+      text: `${displayName(r.agent_id)} ${verb}${r.summary ? `: ${r.summary.slice(0, 140)}` : ''}`,
+    });
+  }
+
+  // 4. Pull dispatch creation + artifacts for any related dispatches
+  if (relatedDispatchIds.size > 0) {
+    const placeholders = Array.from(relatedDispatchIds).map(() => '?').join(',');
+    const dispatchRows = db_.prepare(`
+      SELECT id, title, assignee_agent_id, created_at
+      FROM mc_dispatched_tasks
+      WHERE id IN (${placeholders})
+    `).all(...Array.from(relatedDispatchIds)) as Array<{ id: number; title: string; assignee_agent_id: string; created_at: string }>;
+    for (const d of dispatchRows) {
+      const t = parseSqliteTs(d.created_at);
+      if (t < windowStart || t > windowEnd) continue;
+      events.push({
+        ts: new Date(t).toISOString(),
+        actor: 'Alex',
+        icon: '✈',
+        iconColor: 'text-blue-400',
+        text: `Alex dispatched "${d.title}" to ${displayName(d.assignee_agent_id)}`,
+      });
+    }
+    const artifactRows = db_.prepare(`
+      SELECT id, title, agent_id, dispatch_id, serve_url, created_at, summary
+      FROM artifacts
+      WHERE dispatch_id IN (${placeholders})
+    `).all(...Array.from(relatedDispatchIds)) as Array<{ id: number; title: string; agent_id: string | null; dispatch_id: number; serve_url: string | null; created_at: string; summary: string | null }>;
+    for (const a of artifactRows) {
+      const t = parseSqliteTs(a.created_at);
+      if (t < windowStart || t > windowEnd) continue;
+      events.push({
+        ts: new Date(t).toISOString(),
+        actor: displayName(a.agent_id),
+        actor_emoji: emojiOf(a.agent_id),
+        icon: '📄',
+        iconColor: 'text-amber-400',
+        text: `${displayName(a.agent_id)} registered deliverable "${a.title}"`,
+        details: a.summary ?? undefined,
+        link: { href: `/docs/${a.id}`, label: 'Open artifact' },
+      });
+    }
+  }
+
+  // 5. Flow closed
+  if (flow.ended_at) {
+    events.push({
+      ts: flow.ended_at,
+      actor: displayName(flow.agent_id),
+      actor_emoji: emojiOf(flow.agent_id),
+      icon: '◆',
+      iconColor: 'text-purple-400',
+      text: `Flow closed (${flow.status})`,
+    });
+  }
+
+  // Sort, dedupe exact repeats.
+  events.sort((a, b) => parseSqliteTs(a.ts) - parseSqliteTs(b.ts));
+  const deduped: FlowTimelineEvent[] = [];
+  for (const e of events) {
+    const last = deduped[deduped.length - 1];
+    if (last && last.ts === e.ts && last.text === e.text) continue;
+    deduped.push(e);
+  }
+  return deduped;
+}
+
 export function getMcFlowById(flowId: string): { flow: McFlow; steps: McFlowStep[] } | null {
   const flow = getAllMcFlows().find(f => f.flow_id === flowId);
   if (!flow) return null;
