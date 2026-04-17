@@ -705,6 +705,14 @@ function formatActivityDisplay(
       e.icon = '·';
       e.display = `${actorPrefix} · ${e.action}${suffix(e.summary)}`;
   }
+
+  // Collapse whitespace introduced by empty entity labels ("finished  : foo").
+  if (e.display) {
+    e.display = e.display
+      .replace(/\s+/g, ' ')
+      .replace(/\s+([:,])/g, '$1')
+      .trim();
+  }
 }
 
 // ----- Overview stats -----
