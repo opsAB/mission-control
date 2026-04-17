@@ -1,14 +1,11 @@
-import Link from 'next/link';
 import { getAllArtifacts, getAllProjects } from '@/lib/queries';
-import { fileTypeLabel, formatEstTimestamp, agentDisplayName } from '@/lib/format';
-import StatusBadge from '@/components/StatusBadge';
+import DocsTable from './DocsTable';
 
 export const dynamic = 'force-dynamic';
 
 export default function DocsPage() {
   const artifacts = getAllArtifacts();
   const projects = getAllProjects();
-  const projectMap = new Map(projects.map(p => [p.id, p]));
 
   return (
     <div className="p-6">
@@ -22,53 +19,7 @@ export default function DocsPage() {
           <p className="text-sm text-[var(--color-text-muted)]">No artifacts yet. Artifacts appear here when agents produce browser-openable deliverables.</p>
         </div>
       ) : (
-        <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[var(--color-border)]">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Title</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">File</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Project</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Agent</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Review</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Created</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {artifacts.map(a => {
-                const project = a.project_id ? projectMap.get(a.project_id) : null;
-                return (
-                  <tr key={a.id} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-hover)] transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium">
-                      <Link href={`/docs/${a.id}`} className="hover:text-[var(--color-accent)]">{a.title}</Link>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)] font-mono uppercase">{fileTypeLabel(a.file_path)}</td>
-                    <td className="px-4 py-3">
-                      {project && (
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: project.color }} />
-                          <span className="text-xs text-[var(--color-text-secondary)]">{project.name}</span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">{agentDisplayName(a.agent_id, a.owner)}</td>
-                    <td className="px-4 py-3"><StatusBadge status={a.review_status} /></td>
-                    <td className="px-4 py-3 text-xs text-[var(--color-text-muted)] whitespace-nowrap">{formatEstTimestamp(a.created_at)}</td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/docs/${a.id}`}
-                        className="text-xs text-[var(--color-accent)] hover:text-[var(--color-accent-hover)]"
-                      >
-                        Open →
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DocsTable artifacts={artifacts} projects={projects} />
       )}
     </div>
   );
