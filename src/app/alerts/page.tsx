@@ -1,7 +1,7 @@
 import { getRecentAlerts } from '@/lib/alerts';
 import { timeAgo } from '@/lib/types';
 import AlertRow from './AlertRow';
-import MarkAllRead from './MarkAllRead';
+import ClearAll from './MarkAllRead';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +18,7 @@ export default function AlertsPage() {
             {unread > 0 ? `${unread} unread · ${alerts.length} total` : `${alerts.length} alerts`}
           </p>
         </div>
-        {unread > 0 && <MarkAllRead />}
+        {alerts.length > 0 && <ClearAll />}
       </div>
 
       {alerts.length === 0 ? (

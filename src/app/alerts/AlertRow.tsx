@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Alert } from '@/lib/alerts';
 import { agentDisplayName } from '@/lib/format';
@@ -12,20 +13,23 @@ const severityStyles: Record<string, string> = {
 
 export default function AlertRow({ alert, timeAgoStr }: { alert: Alert; timeAgoStr: string }) {
   const router = useRouter();
+  const [leaving, setLeaving] = useState(false);
   const sev = severityStyles[alert.severity] ?? severityStyles.info;
   const unread = !alert.read_at;
 
-  async function act(action: 'ack' | 'read') {
+  async function dismiss() {
+    setLeaving(true);
     await fetch(`/api/alerts/${alert.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action: 'dismiss' }),
     });
-    router.refresh();
+    // brief fade-out before router refresh pulls it from the list
+    setTimeout(() => router.refresh(), 180);
   }
 
   return (
-    <div className={`border rounded-lg p-4 ${sev} ${unread ? '' : 'opacity-60'}`}>
+    <div className={`border rounded-lg p-4 transition-all duration-200 ${sev} ${leaving ? 'opacity-0 -translate-x-2' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -39,14 +43,14 @@ export default function AlertRow({ alert, timeAgoStr }: { alert: Alert; timeAgoS
         </div>
         <div className="flex flex-col gap-2 shrink-0 items-end">
           <span className="text-xs text-[var(--color-text-muted)]">{timeAgoStr}</span>
-          <div className="flex gap-1">
-            {unread && (
-              <button onClick={() => act('read')} className="px-2 py-1 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded hover:border-[var(--color-border-light)]">Mark read</button>
-            )}
-            {!alert.acknowledged_at && (
-              <button onClick={() => act('ack')} className="px-2 py-1 text-xs bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 rounded hover:bg-emerald-500/25">Ack</button>
-            )}
-          </div>
+          <button
+            onClick={dismiss}
+            disabled={leaving}
+            className="px-2 py-1 text-xs bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded hover:border-[var(--color-border-light)] disabled:opacity-50"
+            title="Dismiss and remove from board"
+          >
+            Dismiss ✕
+          </button>
         </div>
       </div>
     </div>
