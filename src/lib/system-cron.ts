@@ -199,7 +199,10 @@ export function getSystemCronJobs(): OCCronJob[] {
     jobs.push({
       id: `sys-${idx++}`,
       agentId: 'system',
-      name: pendingComment ?? info?.name ?? nameFromCommand(cmd),
+      // Friendly-name map wins for known jobs; crontab `# comment` lines are
+      // only used as a name when no mapping matches. That keeps hand-tuned
+      // MC names from being overridden by stray comment text.
+      name: info?.name ?? pendingComment ?? nameFromCommand(cmd),
       enabled: true,
       schedule: { kind: 'cron', cron: expr },
       nextRunAtMs: nextCronRun(expr),
