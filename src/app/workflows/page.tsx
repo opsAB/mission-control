@@ -71,9 +71,17 @@ export default function WorkflowsPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {flows.map(f => {
+            {[...flows]
+              .sort((a, b) => {
+                const af = a.status === 'blocked' || a.oc_status === 'failed' ? 0 : 1;
+                const bf = b.status === 'blocked' || b.oc_status === 'failed' ? 0 : 1;
+                if (af !== bf) return af - bf;
+                return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+              })
+              .map(f => {
               const project = f.project_id != null ? projectMap.get(f.project_id) : null;
               const stepCount = getOpenClawFlowTasks(f.flow_id).length;
+              const failed = f.status === 'blocked' || f.oc_status === 'failed';
               const durationMs = f.ended_at
                 ? new Date(f.ended_at).getTime() - new Date(f.created_at).getTime()
                 : null;
@@ -86,7 +94,7 @@ export default function WorkflowsPage() {
                 <Link
                   key={f.flow_id}
                   href={`/workflows/flow/${encodeURIComponent(f.flow_id)}`}
-                  className="block bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 hover:border-[var(--color-border-light)] transition-colors"
+                  className={`block bg-[var(--color-bg-secondary)] border rounded-lg p-4 hover:border-[var(--color-border-light)] transition-colors ${failed ? 'border-red-500/40 bg-red-500/5 hover:border-red-500/60' : 'border-[var(--color-border)]'}`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">

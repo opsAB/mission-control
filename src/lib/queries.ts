@@ -462,13 +462,18 @@ export function getFlowTimeline(flowId: string): FlowTimelineEvent[] {
 
   // 2. Per-child task events
   for (const s of steps) {
+    // Phrasing: "delegated to James" when the child has its own agent_id;
+    // "spawned an anonymous sub-agent session" only when there's no identity.
+    const delegateLine = s.agent_id
+      ? `Alfred delegated to ${displayName(s.agent_id)}`
+      : `Alfred spawned an anonymous sub-agent session`;
     events.push({
       ts: s.created_at,
       actor: displayName(flow.agent_id),
       actor_emoji: emojiOf(flow.agent_id),
       icon: '⇢',
       iconColor: 'text-sky-400',
-      text: `Alfred spawned ${displayName(s.agent_id)} as a sub-agent`,
+      text: delegateLine,
       details: s.full_task.slice(0, 600),
     });
     if (s.started_at) {
@@ -482,14 +487,17 @@ export function getFlowTimeline(flowId: string): FlowTimelineEvent[] {
       });
     }
     if (s.ended_at) {
+      const failed = s.status === 'blocked' || s.oc_status === 'failed';
       events.push({
         ts: s.ended_at,
         actor: displayName(s.agent_id),
         actor_emoji: emojiOf(s.agent_id),
-        icon: s.status === 'done' ? '✓' : s.status === 'blocked' ? '✕' : '◯',
-        iconColor: s.status === 'done' ? 'text-emerald-400' : 'text-amber-400',
-        text: `${displayName(s.agent_id)} finished the sub-agent run`,
-        details: s.terminal_summary ?? undefined,
+        icon: failed ? '✕' : s.status === 'done' ? '✓' : '◯',
+        iconColor: failed ? 'text-red-400' : s.status === 'done' ? 'text-emerald-400' : 'text-amber-400',
+        text: failed
+          ? `${displayName(s.agent_id)} failed — ${s.error ?? 'no error captured'}`
+          : `${displayName(s.agent_id)} finished their run`,
+        details: s.terminal_summary ?? s.error ?? undefined,
       });
     }
   }
@@ -579,13 +587,16 @@ export function getFlowTimeline(flowId: string): FlowTimelineEvent[] {
 
   // 5. Flow closed
   if (flow.ended_at) {
+    const failed = flow.status === 'blocked' || flow.oc_status === 'failed';
     events.push({
       ts: flow.ended_at,
       actor: displayName(flow.agent_id),
       actor_emoji: emojiOf(flow.agent_id),
-      icon: '◆',
-      iconColor: 'text-purple-400',
-      text: `Flow closed (${flow.status})`,
+      icon: failed ? '✕' : '◆',
+      iconColor: failed ? 'text-red-400' : 'text-purple-400',
+      text: failed
+        ? `Flow ended with a failure${flow.blocked_summary ? `: ${flow.blocked_summary}` : ''}`
+        : `Flow closed (${flow.status})`,
     });
   }
 
