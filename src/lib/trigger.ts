@@ -33,10 +33,24 @@ export function triggerAgent(agentId: string, message: string): TriggerResult {
 }
 
 export const PROCESS_QUEUE_PROMPT = `Check Mission Control's dispatch queue and process all waiting tasks immediately. Run \`mc.sh poll main\`, then \`mc.sh poll james\`, \`mc.sh poll milo\`, \`mc.sh poll lewis\`, \`mc.sh poll contractor\`. For each returned task:
-- If assigned to you (main), handle it yourself.
-- If assigned to a specialist, spawn/delegate to them using your existing sub-agent pattern.
-- As you work or delegate, send status updates via \`mc.sh status <agent_id> in_progress "<summary>" --dispatch-id <id>\`.
-- When a deliverable file is produced, register it via \`mc.sh artifact <specialist_id> "<title>" <type> <filepath> --summary "<summary>" --dispatch-id <id>\` BEFORE marking the dispatch done. The --dispatch-id is REQUIRED — MC rejects done status on a dispatch with no linked artifact.
-- Mark each dispatch done via \`mc.sh status <agent_id> done "<one-line summary>" --dispatch-id <id>\`. If the dispatch genuinely has no file output, pass \`allow_no_artifact: true\` and \`no_artifact_reason\` in the JSON body instead.
+
+1. Claim it: \`mc.sh pickup <dispatch_id> <agent_id>\`
+2. If assigned to you (main), handle it yourself. If assigned to a specialist, spawn/delegate via your sub-agent pattern.
+3. In-progress update: \`mc.sh status <agent_id> in_progress "<summary>" --dispatch-id <id>\`
+4. Actually do the work and produce a real deliverable file.
+5. Register the artifact BEFORE marking done: \`mc.sh artifact <agent_id> "<title>" <type> <filepath> --dispatch-id <id> --summary "<summary>"\`. The \`--dispatch-id\` flag is REQUIRED — without it the next step is rejected.
+6. Mark done: \`mc.sh status <agent_id> done "<summary>" --dispatch-id <id>\`
+
+**Rules — enforced server-side. Violating them breaks trust with Alex.**
+
+- **Never silent-complete.** MC REJECTS \`status done\` (HTTP 409 \`artifact_required\`) on any dispatch with no artifact linked to its dispatch_id. If you hit that error, you either forgot the artifact or shouldn't be marking it done.
+- **If you cannot do the work, mark it FAILED — not done.** Use \`mc.sh status <agent_id> failed "<why>" --dispatch-id <id>\`. This automatically raises a loud alert to Alex on Telegram so he knows to take over. Mark failed when: you lack credentials, you need a GUI browser / desktop app, the task needs tools you don't have, the target system is unreachable, or you reviewed it and genuinely can't execute safely.
+- **Known capability gaps — do NOT attempt, mark FAILED with a clear reason:**
+  - Logging into web apps that need interactive credentials (E-Trade, banks, brokerages, anything behind SSO/MFA).
+  - Anything requiring a GUI browser or desktop app not scriptable headlessly.
+  - Trading, moving money, or sending payments from Alex's accounts.
+  - Sending outbound messages as Alex (email, DMs) unless the dispatch explicitly authorizes it.
+- **Genuinely-no-file exceptions** (confirmation checks, read-only status lookups): \`mc.sh status <agent_id> done "<summary>" --dispatch-id <id> --allow-no-artifact --no-artifact-reason "<why>"\`. Don't abuse this — if you produced any written output, it belongs in an artifact.
+- **Delegating to a specialist:** use the specialist's agent_id on BOTH the artifact and the status call (not \`main\`).
 
 Follow the rules in ~/mission-control/AGENTS.md exactly. Do this now, don't wait for heartbeat.`;

@@ -12,7 +12,7 @@
 #
 # Subcommands:
 #   mc.sh attention <agent_id> <severity:info|watch|alert> <title> [body] [entity_type] [entity_id]
-#   mc.sh status    <agent_id> <status> [summary] [--task-id <id>] [--dispatch-id <id>]
+#   mc.sh status    <agent_id> <status> [summary] [--task-id <id>] [--dispatch-id <id>] [--allow-no-artifact] [--no-artifact-reason <text>]
 #   mc.sh artifact  <agent_id> <title> <type> <filepath> [--task-id <id>] [--flow-id <id>] [--project-id <id>] [--summary <text>] [--dispatch-id <id>]
 #   mc.sh note      <agent_id> <entity_type> <entity_id> <note>
 #   mc.sh poll      <agent_id>            # returns queued dispatched tasks
@@ -66,16 +66,23 @@ case "$cmd" in
   status)
     require_jq
     agent="${1:?agent_id}"; status="${2:?status}"; summary="${3:-}"
-    task_id=""; dispatch_id=""
-    while [[ $# -gt 3 ]]; do
-      case "$4" in
-        --task-id) task_id="${5:?}"; shift 2 ;;
-        --dispatch-id) dispatch_id="${5:?}"; shift 2 ;;
+    shift 3 || true
+    task_id=""; dispatch_id=""; allow_no_artifact="false"; no_artifact_reason=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --task-id) task_id="${2:?}"; shift 2 ;;
+        --dispatch-id) dispatch_id="${2:?}"; shift 2 ;;
+        --allow-no-artifact) allow_no_artifact="true"; shift ;;
+        --no-artifact-reason) no_artifact_reason="${2:?}"; shift 2 ;;
         *) shift ;;
       esac
     done
-    json=$(jq -nc --arg a "$agent" --arg st "$status" --arg sm "$summary" --arg ti "$task_id" --arg di "$dispatch_id" \
-      '{agent_id:$a, status:$st, summary:$sm} + (if $ti=="" then {} else {task_id:$ti} end) + (if $di=="" then {} else {dispatch_id:($di|tonumber)} end)')
+    json=$(jq -nc --arg a "$agent" --arg st "$status" --arg sm "$summary" --arg ti "$task_id" --arg di "$dispatch_id" --argjson ana "$allow_no_artifact" --arg nar "$no_artifact_reason" \
+      '{agent_id:$a, status:$st, summary:$sm}
+       + (if $ti=="" then {} else {task_id:$ti} end)
+       + (if $di=="" then {} else {dispatch_id:($di|tonumber)} end)
+       + (if $ana then {allow_no_artifact:true} else {} end)
+       + (if $nar=="" then {} else {no_artifact_reason:$nar} end)')
     post_json /api/agent/status "$json"
     ;;
   artifact)

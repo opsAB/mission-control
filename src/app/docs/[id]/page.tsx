@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getArtifactById, getAllProjects } from '@/lib/queries';
 import { renderArtifact } from '@/lib/render';
-import { timeAgo } from '@/lib/types';
+import { fileTypeLabel, formatEstTimestamp } from '@/lib/format';
 import StatusBadge from '@/components/StatusBadge';
 import ArtifactReview from './ArtifactReview';
 
@@ -27,7 +27,7 @@ export default async function ArtifactDetailPage({ params }: { params: Promise<{
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-semibold mb-2">{artifact.title}</h1>
           <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--color-text-secondary)]">
-            <StatusBadge status={artifact.type} />
+            <span className="font-mono uppercase">{fileTypeLabel(artifact.file_path)}</span>
             <StatusBadge status={artifact.review_status} />
             {project && (
               <span className="flex items-center gap-1.5">
@@ -36,7 +36,7 @@ export default async function ArtifactDetailPage({ params }: { params: Promise<{
               </span>
             )}
             <span>{artifact.agent_id ?? artifact.owner}</span>
-            <span>{timeAgo(artifact.created_at)}</span>
+            <span>{formatEstTimestamp(artifact.created_at)}</span>
             {rendered.size != null && <span>{formatSize(rendered.size)}</span>}
           </div>
           {artifact.summary && (

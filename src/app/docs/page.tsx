@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getAllArtifacts, getAllProjects } from '@/lib/queries';
-import { timeAgo } from '@/lib/types';
+import { fileTypeLabel, formatEstTimestamp } from '@/lib/format';
 import StatusBadge from '@/components/StatusBadge';
 
 export const dynamic = 'force-dynamic';
@@ -27,9 +27,9 @@ export default function DocsPage() {
             <thead>
               <tr className="border-b border-[var(--color-border)]">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Title</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Type</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">File</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Project</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Owner</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Agent</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Review</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Created</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider"></th>
@@ -43,7 +43,7 @@ export default function DocsPage() {
                     <td className="px-4 py-3 text-sm font-medium">
                       <Link href={`/docs/${a.id}`} className="hover:text-[var(--color-accent)]">{a.title}</Link>
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={a.type} /></td>
+                    <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)] font-mono uppercase">{fileTypeLabel(a.file_path)}</td>
                     <td className="px-4 py-3">
                       {project && (
                         <div className="flex items-center gap-1.5">
@@ -52,9 +52,9 @@ export default function DocsPage() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">{a.owner}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">{a.agent_id ?? a.owner}</td>
                     <td className="px-4 py-3"><StatusBadge status={a.review_status} /></td>
-                    <td className="px-4 py-3 text-xs text-[var(--color-text-muted)]">{timeAgo(a.created_at)}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--color-text-muted)] whitespace-nowrap">{formatEstTimestamp(a.created_at)}</td>
                     <td className="px-4 py-3">
                       <Link
                         href={`/docs/${a.id}`}
