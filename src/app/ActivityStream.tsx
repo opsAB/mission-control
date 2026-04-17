@@ -7,6 +7,27 @@ import type { ActivityEntry } from '@/lib/queries';
 const ROW_HEIGHT = 32;        // px — matches the row's py-1.5 + text metrics
 const VISIBLE_ROWS = 12;
 
+function iconColor(action: string): string {
+  switch (action) {
+    case 'done':
+    case 'completed':
+      return 'text-emerald-400';
+    case 'failed':
+      return 'text-red-400';
+    case 'in_progress':
+    case 'started':
+      return 'text-indigo-400';
+    case 'picked_up':
+      return 'text-sky-400';
+    case 'review':
+      return 'text-amber-400';
+    case 'triggered':
+      return 'text-purple-400';
+    default:
+      return 'text-[var(--color-text-muted)]';
+  }
+}
+
 interface Props {
   initial: ActivityEntry[];
 }
@@ -91,10 +112,9 @@ export default function ActivityStream({ initial }: Props) {
             style={{ top: idx * ROW_HEIGHT, height: ROW_HEIGHT - 2, opacity: flash ? 1 : Math.max(0.4, 1 - idx * 0.05) }}
           >
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs text-[var(--color-text-muted)] font-mono w-14 shrink-0">{a.entity_type}</span>
-              <span className="text-xs text-[var(--color-text-muted)] w-16 shrink-0">{a.action}</span>
-              <span className="text-sm text-[var(--color-text-secondary)] truncate">
-                {a.agent_emoji ? `${a.agent_emoji} ` : ''}{a.summary || '—'}
+              <span className={`text-xs w-4 shrink-0 text-center ${iconColor(a.action)}`} aria-hidden="true">{a.icon ?? '·'}</span>
+              <span className="text-sm text-[var(--color-text-primary)] truncate">
+                {a.agent_emoji ? `${a.agent_emoji} ` : ''}{a.display ?? a.summary ?? '—'}
               </span>
             </div>
             <span className="text-xs text-[var(--color-text-muted)] shrink-0 ml-2">{timeAgo(a.timestamp)}</span>

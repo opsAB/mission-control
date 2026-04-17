@@ -93,6 +93,11 @@ const COMMAND_INFO: CronJobInfo[] = [
     description: 'Pulls the latest recovery, strain, and sleep metrics from the Whoop API into the local health dataset.',
     sources: ['Whoop API'],
   },
+  {
+    match: /find\s+\/home\/maximus\/logs\/cron.*-delete/,
+    name: 'Nightly Log Cleanup',
+    description: 'Deletes cron logs older than 14 days so the logs/cron folder stays tidy. Added by Alfred during an earlier housekeeping run, not by Alex directly.',
+  },
 ];
 
 export function findCronJobInfo(command: string): CronJobInfo | null {

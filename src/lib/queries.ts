@@ -558,15 +558,29 @@ export interface ActivityEntry {
   summary: string;
   timestamp: string;
   agent_emoji?: string;
+  agent_id?: string | null;
+  agent_name?: string | null;
+  // Pre-formatted, natural-language sentence for display. Format as:
+  //   "<Agent> <verb> <thing>[: <summary>]"
+  display?: string;
+  icon?: string; // single-char status glyph to render at row start
 }
 
 export function getRecentActivity(limit: number = 20): ActivityEntry[] {
   const tasks = getAllMcTasks({ limit: 200 });
   const entries: ActivityEntry[] = [];
 
+  // Build a map of dispatch_id -> title so mc_activity rows referencing a
+  // dispatch can be rendered with the human name instead of the numeric id.
+  const dispatchRows = db().prepare('SELECT id, title, assignee_agent_id FROM mc_dispatched_tasks').all() as Array<{ id: number; title: string; assignee_agent_id: string }>;
+  const dispatchById = new Map(dispatchRows.map(d => [String(d.id), d]));
+
+  // Agent roster for display names.
+  const agentMap = new Map(oc.getOpenClawAgents().map(a => [a.id, a]));
+
   for (const t of tasks.slice(0, 50)) {
     const action = t.status === 'active' ? 'started' : t.status === 'done' ? 'completed' : t.status;
-    entries.push({
+    const entry: ActivityEntry = {
       id: `t-${t.task_id}`,
       entity_type: 'task',
       entity_id: t.task_id,
@@ -574,18 +588,123 @@ export function getRecentActivity(limit: number = 20): ActivityEntry[] {
       summary: `${t.title}${t.summary ? ` — ${t.summary.slice(0, 80)}` : ''}`,
       timestamp: t.updated_at,
       agent_emoji: t.agent_emoji,
-    });
+      agent_id: t.agent_id,
+      agent_name: t.agent_name,
+    };
+    formatActivityDisplay(entry, { dispatchById, agentMap });
+    entries.push(entry);
   }
 
-  // MC-originated activity
-  const mcRows = db().prepare('SELECT * FROM mc_activity ORDER BY timestamp DESC LIMIT ?').all(limit) as Array<{ id: number; entity_type: string; entity_id: string; action: string; summary: string; timestamp: string }>;
+  const mcRows = db().prepare('SELECT * FROM mc_activity ORDER BY timestamp DESC LIMIT ?').all(limit * 2) as Array<{ id: number; entity_type: string; entity_id: string; action: string; summary: string; agent_id: string | null; timestamp: string }>;
   for (const r of mcRows) {
-    entries.push({ id: `mc-${r.id}`, entity_type: r.entity_type, entity_id: r.entity_id, action: r.action, summary: r.summary, timestamp: new Date(parseSqliteTs(r.timestamp)).toISOString() });
+    const agent = r.agent_id ? agentMap.get(r.agent_id) : undefined;
+    const entry: ActivityEntry = {
+      id: `mc-${r.id}`,
+      entity_type: r.entity_type,
+      entity_id: r.entity_id,
+      action: r.action,
+      summary: r.summary,
+      timestamp: new Date(parseSqliteTs(r.timestamp)).toISOString(),
+      agent_id: r.agent_id,
+      agent_name: agent?.name ?? null,
+      agent_emoji: agent?.emoji,
+    };
+    formatActivityDisplay(entry, { dispatchById, agentMap });
+    entries.push(entry);
   }
 
   return entries
     .sort((a, b) => parseSqliteTs(b.timestamp) - parseSqliteTs(a.timestamp))
     .slice(0, limit);
+}
+
+// Turn a raw activity entry into a natural-language sentence for the feed.
+// Assigns `display` and `icon` on the entry directly.
+function formatActivityDisplay(
+  e: ActivityEntry,
+  ctx: { dispatchById: Map<string, { id: number; title: string; assignee_agent_id: string }>; agentMap: Map<string, { id: string; name: string }> }
+) {
+  // agent_id 'mission-control' and 'mc' are system events; show as "Mission Control"
+  const rawAgent = e.agent_id ?? '';
+  let agent = e.agent_name ?? null;
+  if (!agent) {
+    if (rawAgent === 'mission-control' || rawAgent === 'mc' || rawAgent === 'system') agent = 'Mission Control';
+    else if (rawAgent === 'main') agent = 'Alfred';
+    else if (rawAgent) agent = rawAgent.charAt(0).toUpperCase() + rawAgent.slice(1);
+  }
+
+  // Resolve a referenced dispatch into its human title where possible.
+  let entityLabel = '';
+  if (e.entity_type === 'dispatch') {
+    const d = ctx.dispatchById.get(e.entity_id);
+    entityLabel = d?.title ? `"${d.title}"` : `dispatch #${e.entity_id}`;
+  } else if (e.entity_type === 'task') {
+    // For native task rows the summary already carries the title.
+    entityLabel = '';
+  } else if (e.entity_type === 'artifact') {
+    entityLabel = `artifact #${e.entity_id}`;
+  } else if (e.entity_type === 'trigger') {
+    entityLabel = '';
+  }
+
+  const suffix = (s: string | null | undefined) => {
+    if (!s) return '';
+    const trimmed = s.trim();
+    if (!trimmed) return '';
+    return `: ${trimmed.length > 110 ? trimmed.slice(0, 110) + '…' : trimmed}`;
+  };
+
+  const actorPrefix = agent ? `${agent}` : 'An agent';
+
+  switch (e.action) {
+    case 'queued':
+      e.icon = '·';
+      e.display = `${actorPrefix} queued ${entityLabel}${suffix(e.summary)}`.trim();
+      break;
+    case 'picked_up':
+      e.icon = '→';
+      e.display = `${actorPrefix} picked up ${entityLabel}${suffix(e.summary)}`.trim();
+      break;
+    case 'in_progress':
+    case 'started':
+      e.icon = '●';
+      e.display = `${actorPrefix} started working on ${entityLabel}${suffix(e.summary)}`.trim();
+      break;
+    case 'done':
+    case 'completed':
+      e.icon = '✓';
+      e.display = `${actorPrefix} finished ${entityLabel}${suffix(e.summary)}`.trim();
+      break;
+    case 'failed':
+      e.icon = '✕';
+      e.display = `${actorPrefix} couldn't finish ${entityLabel}${suffix(e.summary)}`.trim();
+      break;
+    case 'review':
+      e.icon = '⚑';
+      // summary already reads "Review: approved" or similar — make it natural
+      if (e.summary.startsWith('Review: approved')) {
+        e.display = `Alex approved ${entityLabel}`;
+      } else if (e.summary.startsWith('Review: revision_requested')) {
+        const note = e.summary.replace(/^Review: revision_requested\s*—?\s*/, '');
+        e.display = `Alex requested a revision on ${entityLabel}${note ? ': ' + note.slice(0, 110) : ''}`;
+      } else if (e.summary.startsWith('Review status set to')) {
+        e.display = `Alex updated review on ${entityLabel} (${e.summary.replace('Review status set to ', '')})`;
+      } else {
+        e.display = `${actorPrefix} reviewed ${entityLabel}${suffix(e.summary)}`;
+      }
+      break;
+    case 'triggered':
+      e.icon = '↻';
+      e.display = e.summary || `${actorPrefix} was triggered`;
+      break;
+    case 'note':
+      e.icon = '✎';
+      e.display = `${actorPrefix} left a note${suffix(e.summary)}`;
+      break;
+    default:
+      e.icon = '·';
+      e.display = `${actorPrefix} · ${e.action}${suffix(e.summary)}`;
+  }
 }
 
 // ----- Overview stats -----
