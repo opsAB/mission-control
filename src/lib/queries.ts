@@ -110,16 +110,39 @@ export function getAllMcAgents(): McAgent[] {
 
   const roleMap: Record<string, string> = {
     main: 'Orchestrator',
-    james: 'Five Fifteen / 515 Project',
-    lewis: 'Director / Film',
-    milo: 'Specialist',
-    contractor: 'External Contractor',
+    james: 'Five Fifteen specialist',
+    lewis: 'Test / unused',
+    milo: 'Health & wellness',
+    contractor: 'General specialist (inactive)',
   };
+
+  // Dispatches that are actively being worked on — counts as "active" regardless of
+  // whether OpenClaw's task_runs attributes the work to the specialist (sub-agent
+  // spawns currently attribute to Alfred, not the specialist being handed off to).
+  const activeDispatches = db().prepare(`
+    SELECT assignee_agent_id, title, id
+    FROM mc_dispatched_tasks
+    WHERE status IN ('picked_up', 'in_progress')
+    ORDER BY priority = 'critical' DESC, priority = 'high' DESC, created_at ASC
+  `).all() as Array<{ assignee_agent_id: string; title: string; id: number }>;
+
+  const activeDispatchByAgent = new Map<string, { title: string; id: number }>();
+  for (const d of activeDispatches) {
+    if (!activeDispatchByAgent.has(d.assignee_agent_id)) {
+      activeDispatchByAgent.set(d.assignee_agent_id, { title: d.title, id: d.id });
+    }
+  }
 
   return ocAgents.map(a => {
     const myTasks = tasks.filter(t => t.agent_id === a.id);
     const running = myTasks.filter(t => t.status === 'running');
-    const current = running[0] ?? null;
+    const dispatchWork = activeDispatchByAgent.get(a.id);
+    const isActive = running.length > 0 || !!dispatchWork;
+    const current = dispatchWork
+      ? { title: dispatchWork.title, id: `dispatch-${dispatchWork.id}` }
+      : running[0]
+        ? { title: titleFromTask(running[0].task_preview), id: running[0].task_id }
+        : null;
 
     return {
       id: a.id,
@@ -127,10 +150,10 @@ export function getAllMcAgents(): McAgent[] {
       emoji: a.emoji,
       role: roleMap[a.id] ?? 'Agent',
       workspace: a.workspace ?? null,
-      status: running.length > 0 ? 'active' : (myTasks.length > 0 ? 'idle' : 'offline'),
-      current_task_title: current ? titleFromTask(current.task_preview) : null,
-      current_task_id: current ? current.task_id : null,
-      active_count: running.length,
+      status: isActive ? 'active' : (myTasks.length > 0 ? 'idle' : 'offline'),
+      current_task_title: current?.title ?? null,
+      current_task_id: current?.id ?? null,
+      active_count: running.length + (dispatchWork ? 1 : 0),
     };
   });
 }

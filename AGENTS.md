@@ -41,7 +41,18 @@ A convenience CLI exists at `~/.openclaw/skills/mc-client/mc.sh` (see `skills/mc
    - `POST /api/agent/status` with status `in_progress` during, `done` or `failed` at end
    - If you produced a deliverable, `POST /api/agent/artifact`
 
-3. **Post artifacts for anything reviewable.** Any document, report, brief, code change worth Alex seeing — register it. MC serves files from `data/artifacts/` at `/api/artifacts/serve/<filename>` so they're browser-openable.
+3. **Post artifacts for anything reviewable — this is NOT optional.** If a dispatched task produces any file — a menu, a brief, a report, code, a plan, notes, anything — you MUST call `mc.sh artifact` before marking the dispatch done. A dispatch marked done without its artifact is a broken contract; Alex loses the deliverable and has to go hunting through workspace directories.
+
+   **When delegating to a specialist:** set the `agent_id` on the artifact to the specialist (e.g. `james`), not `main`. Same for `mc.sh status` on the dispatch — the status update should use the specialist's id so MC attributes activity correctly.
+
+   **Correct completion sequence for a specialist dispatch:**
+   ```
+   # while they're working
+   mc.sh status james in_progress "starting menu draft" --dispatch-id 2
+   # when they finish with a file
+   mc.sh artifact james "515 Lounge Menu — first pass" brief /path/to/file.md --summary "8 cocktails, 10 food items"
+   mc.sh status james done "Delivered first pass" --dispatch-id 2
+   ```
 
 4. **Be conservative with attention pings.** Alex's current setting is `blocked_review_only` — only `severity: alert` reaches him. Don't post `info` pings as a substitute for logging; use `note` for that.
 
