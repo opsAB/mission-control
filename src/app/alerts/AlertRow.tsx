@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Alert } from '@/lib/alerts';
 import { agentDisplayName } from '@/lib/format';
@@ -11,11 +11,37 @@ const severityStyles: Record<string, string> = {
   alert: 'bg-red-500/5 border-red-500/20 text-red-400',
 };
 
-export default function AlertRow({ alert, timeAgoStr }: { alert: Alert; timeAgoStr: string }) {
+// SQLite returns "YYYY-MM-DD HH:MM:SS" in UTC without a Z suffix; browsers parse
+// that bare string as local time, which skews diffs by the local offset. Normalize.
+function parseSqliteUtc(s: string): number {
+  if (!s) return Date.now();
+  if (s.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s).getTime();
+  return new Date(s.replace(' ', 'T') + 'Z').getTime();
+}
+
+function timeAgo(dateStr: string, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - parseSqliteUtc(dateStr)) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+export default function AlertRow({ alert }: { alert: Alert }) {
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const sev = severityStyles[alert.severity] ?? severityStyles.info;
   const unread = !alert.read_at;
+
+  // Tick every 30s so relative time stays fresh without relying on a server re-render.
+  useEffect(() => {
+    const i = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(i);
+  }, []);
 
   async function dismiss() {
     setLeaving(true);
@@ -24,7 +50,6 @@ export default function AlertRow({ alert, timeAgoStr }: { alert: Alert; timeAgoS
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'dismiss' }),
     });
-    // brief fade-out before router refresh pulls it from the list
     setTimeout(() => router.refresh(), 180);
   }
 
@@ -42,7 +67,7 @@ export default function AlertRow({ alert, timeAgoStr }: { alert: Alert; timeAgoS
           {alert.body && <div className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap">{alert.body}</div>}
         </div>
         <div className="flex flex-col gap-2 shrink-0 items-end">
-          <span className="text-xs text-[var(--color-text-muted)]">{timeAgoStr}</span>
+          <span className="text-xs text-[var(--color-text-muted)]" title={alert.created_at}>{timeAgo(alert.created_at, now)}</span>
           <button
             onClick={dismiss}
             disabled={leaving}

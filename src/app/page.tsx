@@ -3,6 +3,7 @@ import { timeAgo, getStaleness } from '@/lib/types';
 import StatusBadge from '@/components/StatusBadge';
 import StalenessIndicator from '@/components/StalenessIndicator';
 import Link from 'next/link';
+import ActivityStream from './ActivityStream';
 
 export const dynamic = 'force-dynamic';
 
@@ -117,13 +118,14 @@ export default function OverviewPage() {
           ) : (
             <div className="space-y-2">
               {cronJobs.map(j => (
-                <div key={j.id} className="flex items-center justify-between bg-[var(--color-bg-tertiary)] rounded px-3 py-2 gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm truncate">{j.name}</div>
-                    <div className="text-xs text-[var(--color-text-muted)]">{j.schedule_human}</div>
-                  </div>
+                <Link
+                  key={j.id}
+                  href={`/workflows/cron/${encodeURIComponent(j.id)}`}
+                  className="flex items-center justify-between bg-[var(--color-bg-tertiary)] rounded px-3 py-2 gap-2 hover:bg-[var(--color-bg-hover)] transition-colors"
+                >
+                  <div className="min-w-0 text-sm truncate">{j.name}</div>
                   <StatusBadge status={j.enabled ? 'active' : 'idle'} />
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -163,22 +165,14 @@ export default function OverviewPage() {
         )}
 
         <section className="lg:col-span-2 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-3">Recent Activity</h2>
-          <div className="space-y-1">
-            {activity.map(a => (
-              <div key={a.id} className="slide-in-row flex items-center justify-between px-2 py-1.5 rounded">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs text-[var(--color-text-muted)] font-mono w-14 shrink-0">{a.entity_type}</span>
-                  <span className="text-xs text-[var(--color-text-muted)] w-16 shrink-0">{a.action}</span>
-                  <span className="text-sm text-[var(--color-text-secondary)] truncate">{a.agent_emoji ? `${a.agent_emoji} ` : ''}{a.summary}</span>
-                </div>
-                <span className="text-xs text-[var(--color-text-muted)] shrink-0 ml-2">{timeAgo(a.timestamp)}</span>
-              </div>
-            ))}
-            {activity.length === 0 && (
-              <p className="text-sm text-[var(--color-text-muted)]">No activity yet — dispatches and agent status updates will stream in here.</p>
-            )}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Recent Activity</h2>
+            <span className="text-xs text-[var(--color-text-muted)] flex items-center gap-1.5">
+              <span className="running-dot" aria-hidden="true" style={{ width: 6, height: 6 }} />
+              Live
+            </span>
           </div>
+          <ActivityStream initial={activity} />
         </section>
       </div>
     </div>

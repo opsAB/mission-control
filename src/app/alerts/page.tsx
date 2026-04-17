@@ -28,7 +28,7 @@ export default function AlertsPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {alerts.map(a => <AlertRow key={a.id} alert={a} timeAgoStr={timeAgo(a.created_at)} />)}
+          {alerts.map(a => <AlertRow key={a.id} alert={a} />)}
         </div>
       )}
     </div>

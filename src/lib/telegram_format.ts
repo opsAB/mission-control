@@ -51,20 +51,18 @@ function escapeMd(s: string): string {
 }
 
 export function formatTelegramAlert(p: TelegramAlertPayload): string {
+  // Telegram is already a DM with Alfred's bot, so "from X" is redundant noise.
+  // We keep the layout tight: bold headline, blank line, body sections separated
+  // by blank lines, blank line, italic action hint. Callers should reference the
+  // dispatch/task title in the first body sentence instead of a separate line.
   const lines: string[] = [];
   lines.push(`${severityIcon(p.severity)} *${escapeMd(p.headline)}*`);
-
-  if (p.subject_title) {
-    lines.push(`_${escapeMd(p.subject_title)}_`);
-  }
-
-  lines.push(`from ${escapeMd(agentLabel(p.agent_id))}`);
 
   if (p.sections && p.sections.length) {
     for (const section of p.sections) {
       lines.push(''); // blank line between blocks
       if (section.label) lines.push(`*${escapeMd(section.label)}*`);
-      lines.push(section.text); // body text: let user content pass through raw
+      lines.push(section.text);
     }
   }
 
@@ -74,4 +72,10 @@ export function formatTelegramAlert(p: TelegramAlertPayload): string {
   }
 
   return lines.join('\n');
+}
+
+// Exported for callers that want to reference an agent by display name in body
+// text (e.g. "Alfred couldn't complete X").
+export function getAgentLabel(agentId: string | null): string {
+  return agentLabel(agentId);
 }

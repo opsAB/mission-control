@@ -48,11 +48,10 @@ export async function POST(req: NextRequest) {
         telegram_payload: {
           kind: 'silent_done_blocked',
           headline: 'Silent-done blocked',
-          subject_title: subjectTitle,
           sections: [
             {
               text:
-                `${agent_id === 'main' ? 'Alfred' : agent_id} tried to mark this done with nothing delivered. ` +
+                `${agent_id === 'main' ? 'Alfred' : agent_id} tried to mark *${subjectTitle}* done with nothing delivered. ` +
                 `It's still open — not marked done.`,
             },
             ...(summary
@@ -111,9 +110,8 @@ export async function POST(req: NextRequest) {
         telegram_payload: {
           kind: 'dispatch_failed',
           headline: 'Task failed',
-          subject_title: subjectTitle,
           sections: [
-            { text: `${prettyAgent} couldn't complete this one.` },
+            { text: `${prettyAgent} couldn't complete *${subjectTitle}*.` },
             { label: 'Reason', text: summary || '(no reason given)' },
           ],
           action_hint: 'Open MC → Dispatch to retry, reassign, or handle yourself.',

@@ -55,27 +55,59 @@ function nextCronRun(expr: string, from: Date = new Date()): number | undefined 
   return undefined;
 }
 
-// Friendly names for Alex's known recurring jobs, matched against the command
-// text. First pattern that matches wins. To rename a job, either edit this
-// mapping or add a `# Human name` comment line above the job in crontab.
-const COMMAND_NAME_MAP: Array<{ match: RegExp; name: string }> = [
-  { match: /morning-report-wrapper\.py/, name: 'Morning brief' },
-  { match: /ftl-intel-watchdog\.py/, name: 'FTL Intel watchdog' },
-  { match: /ftl-intel-wrapper\.py/, name: 'FTL Intel — daily snapshot' },
-  { match: /whoop_sync\.py/, name: 'Whoop health sync' },
-  { match: /openclaw\s+update/, name: 'OpenClaw daily update' },
+// Friendly names + descriptions for Alex's known recurring jobs. First pattern
+// that matches wins. To rename a job you can also add `# Human name` on the
+// line immediately above the cron entry, and MC will use that.
+export interface CronJobInfo {
+  match: RegExp;
+  name: string;
+  description?: string;
+  sources?: string[];
+}
+const COMMAND_INFO: CronJobInfo[] = [
+  {
+    match: /openclaw\s+update/,
+    name: 'OpenClaw Firmware Update Check',
+    description: 'Pulls the latest OpenClaw release and restarts the agent gateway so every agent picks up new code. Log: /tmp/openclaw-update.log.',
+  },
+  {
+    match: /morning-report-wrapper\.py/,
+    name: 'Morning Brief',
+    description: 'Generates Alex\'s morning brief and pushes it to Telegram. Runs via the morning-report wrapper at ~/workspace/scripts. Log: /tmp/morning-briefing.log.',
+    sources: ['OpenClaw task_runs', 'Mission Control state', 'Telegram'],
+  },
+  {
+    match: /ftl-intel-watchdog\.py/,
+    name: 'FTL Intel Watchdog',
+    description: 'Health check on the FTL Intel pipeline: confirms the daily snapshot is landing on schedule and re-runs it if missed.',
+  },
+  {
+    match: /ftl-intel-wrapper\.py/,
+    name: 'FTL Intel',
+    description: 'Fort Lauderdale market intelligence snapshot — restaurant openings, hospitality moves, nightlife signals relevant to Five Fifteen.',
+    sources: ['Local news scrapes', 'Social listening', 'Competitor websites'],
+  },
+  {
+    match: /whoop_sync\.py/,
+    name: 'Whoop Sync',
+    description: 'Pulls the latest recovery, strain, and sleep metrics from the Whoop API into the local health dataset.',
+    sources: ['Whoop API'],
+  },
 ];
+
+export function findCronJobInfo(command: string): CronJobInfo | null {
+  for (const entry of COMMAND_INFO) if (entry.match.test(command)) return entry;
+  return null;
+}
 
 // Extract a human-friendly name from the command. Precedence:
 //   1. Known-job mapping above
 //   2. Script filename stripped of extension, prettified
 //   3. First token
 function nameFromCommand(cmd: string): string {
-  const noRedir = cmd.replace(/\s*>[>&]?\s*\S+.*$/g, '').replace(/\s*2>[>&]?\s*\S+.*$/g, '').trim();
-
-  for (const entry of COMMAND_NAME_MAP) {
-    if (entry.match.test(noRedir)) return entry.name;
-  }
+  const noRedir = cleanCommand(cmd);
+  const info = findCronJobInfo(noRedir);
+  if (info) return info.name;
 
   const scriptMatch = noRedir.match(/([\w.-]+)\.(?:py|sh|js|ts|rb)(?=\s|$)/);
   if (scriptMatch) {
@@ -87,6 +119,53 @@ function nameFromCommand(cmd: string): string {
   }
   const firstWord = noRedir.split(/\s+/)[0];
   return (firstWord ?? cmd).slice(0, 80);
+}
+
+function cleanCommand(cmd: string): string {
+  return cmd.replace(/\s*>[>&]?\s*\S+.*$/g, '').replace(/\s*2>[>&]?\s*\S+.*$/g, '').trim();
+}
+
+// Turn a 5-field cron expression into plain English for the detail page.
+export function humanizeCron(expr: string): string {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length < 5) return expr;
+  const [m, h, dom, mon, dow] = parts.slice(0, 5);
+
+  const time = (hh: string, mm: string): string => {
+    const H = Number(hh); const M = Number(mm);
+    if (isNaN(H) || isNaN(M)) return `${hh}:${mm}`;
+    const ampm = H < 12 ? 'AM' : 'PM';
+    const h12 = H === 0 ? 12 : H > 12 ? H - 12 : H;
+    return `${h12}:${M.toString().padStart(2, '0')} ${ampm}`;
+  };
+
+  const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dowName = (d: string): string | null => {
+    const n = Number(d);
+    return !isNaN(n) && n >= 0 && n <= 6 ? DAYS[n] : null;
+  };
+
+  const everyHourStep = h.match(/^\*\/(\d+)$/);
+  if (everyHourStep && m === '0' && dom === '*' && mon === '*' && dow === '*') {
+    return `Every ${everyHourStep[1]} hours, on the hour`;
+  }
+
+  if (dom === '*' && mon === '*' && dow === '*' && !m.includes('*') && !h.includes('*')) {
+    return `Daily at ${time(h, m)}`;
+  }
+
+  if (dom === '*' && mon === '*' && dow !== '*' && !m.includes('*') && !h.includes('*')) {
+    if (dow === '1-5') return `Weekdays at ${time(h, m)}`;
+    if (dow === '0,6' || dow === '6,0') return `Weekends at ${time(h, m)}`;
+    const name = dowName(dow);
+    if (name) return `Weekly on ${name}s at ${time(h, m)}`;
+  }
+
+  if (dom !== '*' && mon === '*' && dow === '*' && !m.includes('*') && !h.includes('*')) {
+    return `Monthly on day ${dom} at ${time(h, m)}`;
+  }
+
+  return expr;
 }
 
 export function getSystemCronJobs(): OCCronJob[] {
@@ -116,14 +195,18 @@ export function getSystemCronJobs(): OCCronJob[] {
     const expr = fields.slice(0, 5).join(' ');
     const cmd = fields.slice(5).join(' ');
 
+    const info = findCronJobInfo(cleanCommand(cmd));
     jobs.push({
       id: `sys-${idx++}`,
       agentId: 'system',
-      name: pendingComment ?? nameFromCommand(cmd),
+      name: pendingComment ?? info?.name ?? nameFromCommand(cmd),
       enabled: true,
       schedule: { kind: 'cron', cron: expr },
       nextRunAtMs: nextCronRun(expr),
       lastRunAtMs: undefined,
+      command: cmd,
+      description: info?.description,
+      sources: info?.sources,
     });
     pendingComment = null;
   }

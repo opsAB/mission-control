@@ -76,8 +76,12 @@ export interface McCronJob {
   agent_id: string;
   enabled: boolean;
   schedule_human: string;
+  schedule_cron: string | null;
   next_run: string | null;
   last_run: string | null;
+  command: string | null;
+  description: string | null;
+  sources: string[];
 }
 
 // ----- Helpers -----
@@ -427,15 +431,28 @@ export function getMcFlowsByProject(projectId: number): McFlow[] {
 
 export function getAllCronJobs(): McCronJob[] {
   const merged = [...oc.getOpenClawCronJobs(), ...getSystemCronJobs()];
-  return merged.map(j => ({
-    id: j.id,
-    name: j.name,
-    agent_id: j.agentId,
-    enabled: j.enabled,
-    schedule_human: describeSchedule(j.schedule),
-    next_run: j.nextRunAtMs ? new Date(j.nextRunAtMs).toISOString() : null,
-    last_run: j.lastRunAtMs ? new Date(j.lastRunAtMs).toISOString() : null,
-  }));
+  return merged.map(j => {
+    const cron = j.schedule && typeof j.schedule === 'object' && 'cron' in j.schedule
+      ? String((j.schedule as { cron?: unknown }).cron ?? '')
+      : '';
+    return {
+      id: j.id,
+      name: j.name,
+      agent_id: j.agentId,
+      enabled: j.enabled,
+      schedule_human: describeSchedule(j.schedule),
+      schedule_cron: cron || null,
+      next_run: j.nextRunAtMs ? new Date(j.nextRunAtMs).toISOString() : null,
+      last_run: j.lastRunAtMs ? new Date(j.lastRunAtMs).toISOString() : null,
+      command: j.command ?? null,
+      description: j.description ?? null,
+      sources: j.sources ?? [],
+    };
+  });
+}
+
+export function getCronJobById(id: string): McCronJob | null {
+  return getAllCronJobs().find(j => j.id === id) ?? null;
 }
 
 function describeSchedule(s: unknown): string {

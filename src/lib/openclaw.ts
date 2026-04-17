@@ -60,6 +60,9 @@ export interface OCCronJob {
   schedule: unknown;
   nextRunAtMs?: number;
   lastRunAtMs?: number;
+  command?: string;
+  description?: string;
+  sources?: string[];
 }
 
 function openDb(relativePath: string): Database.Database | null {
