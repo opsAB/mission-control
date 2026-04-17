@@ -190,6 +190,62 @@ export function getOpenClawFlows(): OCFlow[] {
   }
 }
 
+// All child tasks (steps) belonging to a flow, earliest first.
+export function getOpenClawFlowTasks(flowId: string): OCTask[] {
+  const db = openDb('tasks/runs.sqlite');
+  if (!db) return [];
+  try {
+    const rows = db.prepare(`
+      SELECT task_id, owner_key, status, delivery_status, task, label, progress_summary, terminal_summary,
+             created_at, started_at, ended_at, last_event_at, parent_task_id, parent_flow_id, error
+      FROM task_runs
+      WHERE parent_flow_id = ?
+      ORDER BY created_at ASC
+    `).all(flowId) as Array<{
+      task_id: string;
+      owner_key: string;
+      status: string;
+      delivery_status: string;
+      task: string;
+      label: string | null;
+      progress_summary: string | null;
+      terminal_summary: string | null;
+      created_at: number;
+      started_at: number | null;
+      ended_at: number | null;
+      last_event_at: number | null;
+      parent_task_id: string | null;
+      parent_flow_id: string | null;
+      error: string | null;
+    }>;
+    return rows.map(r => {
+      const owner = parseOwnerKey(r.owner_key);
+      return {
+        task_id: r.task_id,
+        owner_key: r.owner_key,
+        agent_id: owner.agent_id,
+        source: owner.source,
+        source_ref: owner.source_ref,
+        status: r.status,
+        delivery_status: r.delivery_status,
+        task_preview: firstLine(r.task).slice(0, 180),
+        task_full: r.task,
+        progress_summary: r.progress_summary,
+        terminal_summary: r.terminal_summary,
+        created_at: r.created_at,
+        started_at: r.started_at,
+        ended_at: r.ended_at,
+        last_event_at: r.last_event_at,
+        parent_task_id: r.parent_task_id,
+        parent_flow_id: r.parent_flow_id,
+        error: r.error,
+      };
+    });
+  } finally {
+    db.close();
+  }
+}
+
 export function getOpenClawCronJobs(): OCCronJob[] {
   if (!isOpenClawAvailable()) return [];
   try {

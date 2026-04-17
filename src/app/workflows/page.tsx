@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { getAllMcFlows, getAllCronJobs, getAllProjects } from '@/lib/queries';
+import { getOpenClawFlowTasks } from '@/lib/openclaw';
 import { humanizeCron } from '@/lib/system-cron';
 import { formatEstTimestamp, agentDisplayName } from '@/lib/format';
 import { timeAgo } from '@/lib/types';
@@ -72,8 +73,21 @@ export default function WorkflowsPage() {
           <div className="space-y-2">
             {flows.map(f => {
               const project = f.project_id != null ? projectMap.get(f.project_id) : null;
+              const stepCount = getOpenClawFlowTasks(f.flow_id).length;
+              const durationMs = f.ended_at
+                ? new Date(f.ended_at).getTime() - new Date(f.created_at).getTime()
+                : null;
+              const durationLabel = durationMs == null
+                ? 'running'
+                : durationMs < 60_000
+                  ? `${Math.round(durationMs / 1000)}s`
+                  : `${Math.round(durationMs / 60_000)}m`;
               return (
-                <div key={f.flow_id} className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4">
+                <Link
+                  key={f.flow_id}
+                  href={`/workflows/flow/${encodeURIComponent(f.flow_id)}`}
+                  className="block bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4 hover:border-[var(--color-border-light)] transition-colors"
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -82,22 +96,28 @@ export default function WorkflowsPage() {
                         <StalenessIndicator status={f.status} lastUpdate={f.updated_at} />
                       </div>
                       {f.blocked_summary && <p className="text-xs text-red-400 mb-1">Blocked: {f.blocked_summary}</p>}
-                      <div className="flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
-                        <span>{f.agent_emoji} {agentDisplayName(f.agent_id, f.agent_name)}</span>
+                      <div className="flex items-center flex-wrap gap-3 text-xs text-[var(--color-text-muted)]">
+                        <span>Orchestrator: {f.agent_emoji} {agentDisplayName(f.agent_id, f.agent_name)}</span>
+                        <span>·</span>
+                        <span>{stepCount} step{stepCount === 1 ? '' : 's'}</span>
+                        <span>·</span>
+                        <span>{durationLabel}</span>
                         {project && (
-                          <span className="flex items-center gap-1">
-                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: project.color }} />
-                            {project.name}
-                          </span>
+                          <>
+                            <span>·</span>
+                            <span className="flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: project.color }} />
+                              {project.name}
+                            </span>
+                          </>
                         )}
                       </div>
                     </div>
                     <div className="text-right text-xs text-[var(--color-text-muted)] shrink-0">
-                      <div>Updated {timeAgo(f.updated_at)}</div>
-                      {f.ended_at && <div>Ended {timeAgo(f.ended_at)}</div>}
+                      <div>{f.ended_at ? `Ended ${timeAgo(f.ended_at)}` : `Updated ${timeAgo(f.updated_at)}`}</div>
                     </div>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>

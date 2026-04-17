@@ -388,6 +388,58 @@ export function setTaskReview(taskId: string, status: string, note?: string) {
 
 // ----- Flows -----
 
+export interface McFlowStep {
+  task_id: string;
+  label: string;                // machine label (mc-dispatch-james-2) when available
+  preview: string;              // first line of the task prompt
+  full_task: string;
+  status: string;               // mapped MC status
+  oc_status: string;
+  agent_id: string | null;
+  agent_name: string;
+  agent_emoji: string;
+  source: string;
+  created_at: string;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_ms: number | null;
+  progress_summary: string | null;
+  terminal_summary: string | null;
+  error: string | null;
+}
+
+export function getMcFlowById(flowId: string): { flow: McFlow; steps: McFlowStep[] } | null {
+  const flow = getAllMcFlows().find(f => f.flow_id === flowId);
+  if (!flow) return null;
+  const agentMap = new Map(oc.getOpenClawAgents().map(a => [a.id, a]));
+  const rawSteps = oc.getOpenClawFlowTasks(flowId);
+  const steps: McFlowStep[] = rawSteps.map(t => {
+    const agent = t.agent_id ? agentMap.get(t.agent_id) : undefined;
+    const startTs = t.started_at ?? t.created_at;
+    const endTs = t.ended_at ?? null;
+    return {
+      task_id: t.task_id,
+      label: '',
+      preview: titleFromTask(t.task_preview),
+      full_task: t.task_full,
+      status: oc.ocTaskToMcStatus(t.status),
+      oc_status: t.status,
+      agent_id: t.agent_id,
+      agent_name: agent?.name ?? t.agent_id ?? 'unknown',
+      agent_emoji: agent?.emoji ?? '',
+      source: t.source,
+      created_at: new Date(t.created_at).toISOString(),
+      started_at: t.started_at ? new Date(t.started_at).toISOString() : null,
+      ended_at: endTs ? new Date(endTs).toISOString() : null,
+      duration_ms: endTs ? endTs - startTs : null,
+      progress_summary: t.progress_summary,
+      terminal_summary: t.terminal_summary,
+      error: t.error,
+    };
+  });
+  return { flow, steps };
+}
+
 export function getAllMcFlows(): McFlow[] {
   const { agentMap, projects } = loadContext();
   const overlayRows = db().prepare('SELECT flow_id, project_id, review_status FROM flow_overlay').all() as Array<{ flow_id: string; project_id: number | null; review_status: string }>;
