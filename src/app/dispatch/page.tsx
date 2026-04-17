@@ -94,7 +94,7 @@ function Empty({ text }: { text: string }) {
 }
 
 function DispatchCard({ row, agent, project }: { row: DispatchRow; agent?: { name: string; emoji: string }; project?: { name: string; color: string } }) {
-  const openclawLink = row.openclaw_task_id ? <Link href={`/tasks/${row.openclaw_task_id}`} className="text-xs text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] ml-2">View task →</Link> : null;
+  const openclawLink = row.openclaw_task_id ? <Link href={`/tasks?task=${row.openclaw_task_id}`} className="text-xs text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] ml-2">View task →</Link> : null;
   return (
     <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4">
       <div className="flex items-start justify-between gap-4">
