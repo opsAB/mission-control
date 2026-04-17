@@ -3,6 +3,7 @@ import { ensureInit } from '@/lib/init';
 import { getAllMcAgents, getAllProjects } from '@/lib/queries';
 import { timeAgo } from '@/lib/types';
 import DispatchForm from './DispatchForm';
+import ProcessQueueButton from './ProcessQueueButton';
 import StatusBadge from '@/components/StatusBadge';
 import Link from 'next/link';
 
@@ -37,23 +38,23 @@ export default function DispatchPage() {
 
   return (
     <div className="p-6 max-w-5xl">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold">Dispatch</h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mt-1">Send tasks to agents. Tasks sit queued until the assigned agent polls MC.</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Dispatch</h1>
+          <p className="text-sm text-[var(--color-text-secondary)] mt-1">Send tasks to agents. Queued tasks pick up on Alfred&apos;s next heartbeat — or trigger him now.</p>
+        </div>
+        <ProcessQueueButton />
       </div>
 
       <DispatchForm agents={agents} projects={projects} />
 
       {queued.length > 0 && (
-        <div className="mt-4 bg-amber-500/5 border border-amber-500/20 rounded-lg p-4">
-          <div className="flex items-start gap-3">
+        <div className="mt-4 bg-amber-500/5 border border-amber-500/20 rounded-lg p-4 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 flex-1">
             <div className="text-amber-400 text-lg">⏳</div>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-amber-400">Queued tasks waiting for pickup</div>
-              <div className="text-xs text-[var(--color-text-secondary)] mt-1">
-                Specialists don&apos;t auto-poll yet. To trigger pickup, message Alfred on Telegram: <span className="font-mono text-[var(--color-text-primary)]">&quot;Poll MC for queued tasks and delegate each to the assigned agent.&quot;</span>{' '}
-                Alfred will run <span className="font-mono text-[var(--color-text-primary)]">mc.sh poll &lt;agent_id&gt;</span> for each specialist and hand them off.
-              </div>
+            <div>
+              <div className="text-sm font-medium text-amber-400">{queued.length} queued {queued.length === 1 ? 'task' : 'tasks'} waiting</div>
+              <div className="text-xs text-[var(--color-text-secondary)] mt-1">Use <span className="font-medium text-[var(--color-text-primary)]">Poll queue now</span> above to wake Alfred without waiting for the next heartbeat.</div>
             </div>
           </div>
         </div>

@@ -13,6 +13,7 @@ export default function DispatchForm({ agents, projects }: { agents: Agent[]; pr
   const [assignee, setAssignee] = useState('main');
   const [priority, setPriority] = useState('medium');
   const [projectId, setProjectId] = useState<string>('');
+  const [triggerNow, setTriggerNow] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -30,6 +31,16 @@ export default function DispatchForm({ agents, projects }: { agents: Agent[]; pr
         project_id: projectId ? Number(projectId) : null,
       }),
     });
+
+    const shouldAutoTrigger = triggerNow || priority === 'critical';
+    if (shouldAutoTrigger) {
+      await fetch('/api/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'process_queue' }),
+      });
+    }
+
     setTitle(''); setDescription(''); setProjectId('');
     setSubmitting(false);
     router.refresh();
@@ -59,14 +70,24 @@ export default function DispatchForm({ agents, projects }: { agents: Agent[]; pr
           <option value="low">Low priority</option>
           <option value="medium">Medium priority</option>
           <option value="high">High priority</option>
-          <option value="critical">Critical</option>
+          <option value="critical">Critical (always triggers now)</option>
         </select>
         <select value={projectId} onChange={e => setProjectId(e.target.value)} className="bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-md px-3 py-2 text-sm">
           <option value="">No project</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between pt-1">
+        <label className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+          <input
+            type="checkbox"
+            checked={triggerNow || priority === 'critical'}
+            disabled={priority === 'critical'}
+            onChange={e => setTriggerNow(e.target.checked)}
+            className="accent-[var(--color-accent)]"
+          />
+          Trigger Alfred immediately (otherwise waits for next heartbeat)
+        </label>
         <button type="submit" disabled={submitting || !title.trim()} className="px-4 py-2 text-sm font-medium bg-[var(--color-accent)] text-white rounded hover:bg-[var(--color-accent-hover)] disabled:opacity-50">
           {submitting ? 'Dispatching…' : 'Dispatch task'}
         </button>
