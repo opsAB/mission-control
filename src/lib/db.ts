@@ -150,6 +150,10 @@ function initSchema(db: Database.Database) {
   if (!actInfo.some(c => c.name === 'agent_id')) {
     try { db.exec('ALTER TABLE mc_activity ADD COLUMN agent_id TEXT'); } catch {}
   }
+  const alertInfo = db.prepare("PRAGMA table_info(alerts)").all() as Array<{ name: string }>;
+  if (!alertInfo.some(c => c.name === 'dismissed_at')) {
+    try { db.exec('ALTER TABLE alerts ADD COLUMN dismissed_at TEXT'); } catch {}
+  }
 
   // Seed default settings
   const defaults: Record<string, string> = {

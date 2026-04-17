@@ -1,6 +1,7 @@
 import { getDb } from './db';
 import { ensureInit } from './init';
 import * as oc from './openclaw';
+import { getSystemCronJobs } from './system-cron';
 import type { Project, Artifact } from './types';
 
 function db() {
@@ -425,7 +426,8 @@ export function getMcFlowsByProject(projectId: number): McFlow[] {
 // ----- Cron / Recurring -----
 
 export function getAllCronJobs(): McCronJob[] {
-  return oc.getOpenClawCronJobs().map(j => ({
+  const merged = [...oc.getOpenClawCronJobs(), ...getSystemCronJobs()];
+  return merged.map(j => ({
     id: j.id,
     name: j.name,
     agent_id: j.agentId,
