@@ -36,6 +36,6 @@ export async function POST(req: NextRequest) {
         openclaw_task_id = COALESCE(?, openclaw_task_id), updated_at = datetime('now')
     WHERE id = ? AND assignee_agent_id = ? AND status = 'queued'
   `).run(openclaw_task_id ?? null, dispatch_id, agent_id);
-  broadcast('dispatch_updated', { id: dispatch_id, status: 'picked_up' });
+  broadcast('dispatch_updated', { id: dispatch_id, status: 'picked_up', assignee_agent_id: agent_id });
   return Response.json({ ok: true });
 }

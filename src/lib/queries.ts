@@ -158,6 +158,127 @@ export function getAllMcAgents(): McAgent[] {
   });
 }
 
+// ----- Office view (richer agent status) -----
+
+export interface OfficeAgent {
+  id: string;
+  name: string;
+  emoji: string;
+  role: string;
+  status: 'working' | 'idle' | 'sleeping';
+  current_task: { title: string; source: 'task' | 'dispatch'; ref: string } | null;
+  last_activity_at: string | null;      // ISO
+  last_activity_summary: string | null;
+  last_activity_action: string | null;  // e.g. 'started', 'progress', 'note', 'artifact'
+  pending_dispatches: number;
+  active_count: number;
+}
+
+export function getOfficeAgents(): OfficeAgent[] {
+  const ocAgents = oc.getOpenClawAgents();
+  const tasks = oc.getOpenClawTasks(200);
+
+  const roleMap: Record<string, string> = {
+    main: 'Orchestrator',
+    james: 'Five Fifteen specialist',
+    lewis: 'Test / unused',
+    milo: 'Health & wellness',
+    contractor: 'General specialist (inactive)',
+  };
+
+  const activeDispatches = db().prepare(`
+    SELECT assignee_agent_id, title, id, status, updated_at
+    FROM mc_dispatched_tasks
+    WHERE status IN ('picked_up', 'in_progress')
+    ORDER BY priority = 'critical' DESC, priority = 'high' DESC, created_at ASC
+  `).all() as Array<{ assignee_agent_id: string; title: string; id: number; status: string; updated_at: string }>;
+
+  const activeDispatchByAgent = new Map<string, { title: string; id: number; updated_at: string }>();
+  for (const d of activeDispatches) {
+    if (!activeDispatchByAgent.has(d.assignee_agent_id)) {
+      activeDispatchByAgent.set(d.assignee_agent_id, { title: d.title, id: d.id, updated_at: d.updated_at });
+    }
+  }
+
+  const queuedRows = db().prepare(`
+    SELECT assignee_agent_id, COUNT(*) as n
+    FROM mc_dispatched_tasks
+    WHERE status = 'queued'
+    GROUP BY assignee_agent_id
+  `).all() as Array<{ assignee_agent_id: string; n: number }>;
+  const queuedByAgent = new Map(queuedRows.map(r => [r.assignee_agent_id, r.n]));
+
+  // Latest mc_activity row per agent (we don't store agent_id on every row, so we also
+  // fall back to the most recent task_run event time for that agent).
+  const activityRows = db().prepare(`
+    SELECT agent_id, action, summary, timestamp
+    FROM mc_activity
+    WHERE agent_id IS NOT NULL
+    ORDER BY timestamp DESC
+    LIMIT 200
+  `).all() as Array<{ agent_id: string; action: string; summary: string; timestamp: string }>;
+  const lastActivityByAgent = new Map<string, { action: string; summary: string; timestamp: string }>();
+  for (const r of activityRows) {
+    if (!lastActivityByAgent.has(r.agent_id)) lastActivityByAgent.set(r.agent_id, r);
+  }
+
+  const now = Date.now();
+  const IDLE_MS = 30 * 60 * 1000;
+
+  return ocAgents.map(a => {
+    const myTasks = tasks.filter(t => t.agent_id === a.id);
+    const running = myTasks.filter(t => t.status === 'running');
+    const dispatchWork = activeDispatchByAgent.get(a.id);
+    const isWorking = running.length > 0 || !!dispatchWork;
+
+    const current = dispatchWork
+      ? { title: dispatchWork.title, source: 'dispatch' as const, ref: `dispatch-${dispatchWork.id}` }
+      : running[0]
+        ? { title: titleFromTask(running[0].task_preview), source: 'task' as const, ref: running[0].task_id }
+        : null;
+
+    // Most recent signal: latest task_run event OR latest mc_activity row
+    const taskLastMs = myTasks.length ? Math.max(...myTasks.map(t => t.last_event_at ?? t.ended_at ?? t.started_at ?? t.created_at)) : 0;
+    const activity = lastActivityByAgent.get(a.id);
+    const activityMs = activity ? new Date(activity.timestamp).getTime() : 0;
+    const lastMs = Math.max(taskLastMs, activityMs);
+
+    // Derive activity summary preferring mc_activity, else latest task status
+    let lastAction: string | null = null;
+    let lastSummary: string | null = null;
+    if (activityMs >= taskLastMs && activity) {
+      lastAction = activity.action;
+      lastSummary = activity.summary;
+    } else if (myTasks.length) {
+      const newest = myTasks.reduce((acc, t) => {
+        const ts = t.last_event_at ?? t.ended_at ?? t.started_at ?? t.created_at;
+        return ts > (acc.last_event_at ?? acc.ended_at ?? acc.started_at ?? acc.created_at) ? t : acc;
+      }, myTasks[0]);
+      lastAction = newest.status;
+      lastSummary = titleFromTask(newest.task_preview);
+    }
+
+    let status: 'working' | 'idle' | 'sleeping';
+    if (isWorking) status = 'working';
+    else if (lastMs > 0 && now - lastMs < IDLE_MS) status = 'idle';
+    else status = 'sleeping';
+
+    return {
+      id: a.id,
+      name: a.name,
+      emoji: a.emoji,
+      role: roleMap[a.id] ?? 'Agent',
+      status,
+      current_task: current,
+      last_activity_at: lastMs > 0 ? new Date(lastMs).toISOString() : null,
+      last_activity_summary: lastSummary,
+      last_activity_action: lastAction,
+      pending_dispatches: queuedByAgent.get(a.id) ?? 0,
+      active_count: running.length + (dispatchWork ? 1 : 0),
+    };
+  });
+}
+
 // ----- Projects -----
 
 export function getAllProjects(): Project[] {
