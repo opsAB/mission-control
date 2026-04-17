@@ -85,6 +85,12 @@ If you need to modify MC:
 - `telegram_enabled`, `telegram_chat_id`
 - `digest_enabled`, `digest_time` — controls the morning digest
 
+## Naming rules
+
+- Alex's new members club is **Five Fifteen** (two words) — never write "515" in any user-facing copy, note, artifact, or dispatch description. The typographic logo spells out the name; using digits breaks the brand.
+- Internal agent_id `james` stays as-is (system identifier, not brand copy).
+- Refer to Alex as "Alex" in Telegram and MC output, not "the user" or "Mr. Barlow".
+
 ## When in doubt
 
 Ask Alex. Use `mc.sh attention main alert "<question>" "<details>"`. Do not guess at architecture.
