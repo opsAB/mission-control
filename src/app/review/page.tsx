@@ -1,6 +1,5 @@
 import { getReviewQueue } from '@/lib/queries';
 import { timeAgo } from '@/lib/types';
-import StatusBadge from '@/components/StatusBadge';
 import ReviewActions from './ReviewActions';
 
 export const dynamic = 'force-dynamic';
@@ -27,21 +26,21 @@ export default function ReviewPage() {
           {queue.map(item => (
             <div key={`${item.type}-${item.id}`} className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4">
               <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-xs font-mono ${item.type === 'task' ? 'text-blue-400' : 'text-purple-400'}`}>
-                      {item.type === 'task' ? 'TASK' : 'ARTIFACT'}
+                    <span className={`text-xs font-mono ${item.type === 'task' ? 'text-blue-400' : item.type === 'flow' ? 'text-purple-400' : 'text-pink-400'}`}>
+                      {item.type.toUpperCase()}
                     </span>
-                    {item.artifactType && <StatusBadge status={item.artifactType} />}
+                    {item.project_name && <span className="text-xs text-[var(--color-text-muted)]">{item.project_name}</span>}
                   </div>
                   <h3 className="text-sm font-medium mb-1">{item.title}</h3>
-                  {item.summary && <p className="text-xs text-[var(--color-text-secondary)] mb-2">{item.summary}</p>}
+                  {item.summary && <p className="text-xs text-[var(--color-text-secondary)] mb-2 line-clamp-2">{item.summary}</p>}
                   <div className="flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
-                    <span>{item.executor}</span>
+                    <span>{item.agent_emoji} {item.agent}</span>
                     <span>{timeAgo(item.created_at)}</span>
                   </div>
                 </div>
-                <ReviewActions type={item.type} id={item.id} serveUrl={item.serve_url} />
+                <ReviewActions type={item.type} id={item.id} serveUrl={item.url} />
               </div>
             </div>
           ))}

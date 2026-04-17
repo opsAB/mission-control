@@ -43,8 +43,8 @@ export interface Artifact {
   id: number;
   title: string;
   type: ArtifactType;
-  task_id: number | null;
-  workflow_id: number | null;
+  task_id: string | null;
+  flow_id: string | null;
   file_path: string;
   serve_url: string;
   created_at: string;

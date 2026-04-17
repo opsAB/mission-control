@@ -1,6 +1,4 @@
-import { getAllProjects, getTasksByProject, getWorkflowsByProject, getArtifactsByProject } from '@/lib/queries';
-import StatusBadge from '@/components/StatusBadge';
-import Link from 'next/link';
+import { getAllProjects, getMcTasksByProject, getMcFlowsByProject, getArtifactsByProject } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,14 +14,13 @@ export default function ProjectsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {projects.map(p => {
-          const tasks = getTasksByProject(p.id);
-          const workflows = getWorkflowsByProject(p.id);
+          const tasks = getMcTasksByProject(p.id);
+          const flows = getMcFlowsByProject(p.id);
           const artifacts = getArtifactsByProject(p.id);
 
-          const activeTasks = tasks.filter(t => t.status === 'active').length;
-          const blockedTasks = tasks.filter(t => t.status === 'blocked').length;
-          const reviewTasks = tasks.filter(t => t.status === 'review').length;
-          const activeWorkflows = workflows.filter(w => w.status === 'active').length;
+          const active = tasks.filter(t => t.status === 'active').length;
+          const blocked = tasks.filter(t => t.status === 'blocked').length;
+          const pendingReview = tasks.filter(t => t.review_status === 'pending').length;
 
           return (
             <div key={p.id} className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-5 hover:border-[var(--color-border-light)] transition-colors">
@@ -35,15 +32,15 @@ export default function ProjectsPage() {
 
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-[var(--color-bg-tertiary)] rounded px-3 py-2">
-                  <div className="text-lg font-bold text-emerald-400">{activeTasks}</div>
+                  <div className="text-lg font-bold text-emerald-400">{active}</div>
                   <div className="text-xs text-[var(--color-text-muted)]">Active tasks</div>
                 </div>
-                <div className={`bg-[var(--color-bg-tertiary)] rounded px-3 py-2 ${blockedTasks > 0 ? 'border border-red-500/20' : ''}`}>
-                  <div className={`text-lg font-bold ${blockedTasks > 0 ? 'text-red-400' : 'text-gray-400'}`}>{blockedTasks}</div>
+                <div className={`bg-[var(--color-bg-tertiary)] rounded px-3 py-2 ${blocked > 0 ? 'border border-red-500/20' : ''}`}>
+                  <div className={`text-lg font-bold ${blocked > 0 ? 'text-red-400' : 'text-gray-400'}`}>{blocked}</div>
                   <div className="text-xs text-[var(--color-text-muted)]">Blocked</div>
                 </div>
                 <div className="bg-[var(--color-bg-tertiary)] rounded px-3 py-2">
-                  <div className="text-lg font-bold text-blue-400">{reviewTasks}</div>
+                  <div className="text-lg font-bold text-blue-400">{pendingReview}</div>
                   <div className="text-xs text-[var(--color-text-muted)]">Review</div>
                 </div>
                 <div className="bg-[var(--color-bg-tertiary)] rounded px-3 py-2">
@@ -55,11 +52,22 @@ export default function ProjectsPage() {
               <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
                 <span>{tasks.length} tasks</span>
                 <span>·</span>
-                <span>{activeWorkflows} active workflows</span>
+                <span>{flows.length} flows</span>
               </div>
             </div>
           );
         })}
+        {projects.length === 0 && (
+          <div className="md:col-span-2 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-8 text-center text-sm text-[var(--color-text-muted)]">
+            No projects yet.
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4">
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Projects are MC-owned. Tasks can be assigned to a project by writing to the <code className="font-mono">task_overlay</code> table (UI for this coming next).
+        </p>
       </div>
     </div>
   );

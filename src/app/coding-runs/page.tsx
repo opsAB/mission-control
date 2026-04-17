@@ -1,81 +1,50 @@
-import { getAllCodingRuns, getAllAgents, getAllProjects } from '@/lib/queries';
+import { getAllMcFlows } from '@/lib/queries';
 import { timeAgo } from '@/lib/types';
 import StatusBadge from '@/components/StatusBadge';
 
 export const dynamic = 'force-dynamic';
 
 export default function CodingRunsPage() {
-  const runs = getAllCodingRuns();
-  const agents = getAllAgents();
-  const projects = getAllProjects();
-  const agentMap = new Map(agents.map(a => [a.id, a]));
-  const projectMap = new Map(projects.map(p => [p.id, p]));
-
-  const active = runs.filter(r => r.status === 'running' || r.status === 'queued');
-  const completed = runs.filter(r => r.status !== 'running' && r.status !== 'queued');
+  const flows = getAllMcFlows();
+  const active = flows.filter(f => f.status === 'active' || f.status === 'waiting');
+  const completed = flows.filter(f => f.status !== 'active' && f.status !== 'waiting');
 
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold">Coding Runs</h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mt-1">{runs.length} total ({active.length} active)</p>
+        <h1 className="text-xl font-semibold">Flow Runs</h1>
+        <p className="text-sm text-[var(--color-text-secondary)] mt-1">{flows.length} total ({active.length} active) · Coding-run architecture — ready for Alfred&apos;s bounded worker pattern</p>
       </div>
 
-      {/* Active runs */}
       {active.length > 0 && (
         <section className="mb-8">
           <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-3">Active</h2>
           <div className="space-y-3">
-            {active.map(r => {
-              const agent = r.agent_id ? agentMap.get(r.agent_id) : null;
-              const project = r.project_id ? projectMap.get(r.project_id) : null;
-              return (
-                <div key={r.id} className="bg-[var(--color-bg-secondary)] border border-emerald-500/20 rounded-lg p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-sm font-medium">{r.title}</h3>
-                        <StatusBadge status={r.status} />
-                      </div>
-                      <p className="text-xs text-[var(--color-text-secondary)] mb-2">{r.summary}</p>
-                      <div className="flex items-center gap-4 text-xs text-[var(--color-text-muted)]">
-                        {agent && <span>Agent: {agent.name}</span>}
-                        {project && (
-                          <span className="flex items-center gap-1">
-                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: project.color }} />
-                            {project.name}
-                          </span>
-                        )}
-                        <span>Started: {timeAgo(r.started_at)}</span>
-                      </div>
+            {active.map(f => (
+              <div key={f.flow_id} className="bg-[var(--color-bg-secondary)] border border-emerald-500/20 rounded-lg p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-sm font-medium">{f.name}</h3>
+                      <StatusBadge status={f.status} />
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs text-[var(--color-text-muted)] mb-1">Context</div>
-                      <div className="text-sm font-mono text-[var(--color-text-secondary)]">{(r.context_length / 1000).toFixed(0)}k</div>
-                      {r.last_checkpoint && (
-                        <div className="text-xs text-[var(--color-text-muted)] mt-1">Checkpoint: {timeAgo(r.last_checkpoint)}</div>
-                      )}
+                    {f.blocked_summary && <p className="text-xs text-red-400 mb-2">Blocked: {f.blocked_summary}</p>}
+                    <div className="flex items-center gap-4 text-xs text-[var(--color-text-muted)]">
+                      <span>{f.agent_emoji} {f.agent_name}</span>
+                      <span>Revision {f.revision}</span>
+                      <span>Started {timeAgo(f.created_at)}</span>
                     </div>
                   </div>
-                  {/* Context length bar */}
-                  <div className="mt-3 bg-[var(--color-bg-tertiary)] rounded-full h-1.5">
-                    <div
-                      className="bg-emerald-400 h-1.5 rounded-full transition-all"
-                      style={{ width: `${Math.min((r.context_length / 200000) * 100, 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between mt-1 text-xs text-[var(--color-text-muted)]">
-                    <span>{(r.context_length / 1000).toFixed(0)}k tokens</span>
-                    <span>200k limit</span>
+                  <div className="text-right text-xs text-[var(--color-text-muted)]">
+                    Updated {timeAgo(f.updated_at)}
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </section>
       )}
 
-      {/* Completed runs */}
       {completed.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-3">History</h2>
@@ -83,33 +52,33 @@ export default function CodingRunsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Run</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Goal</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Agent</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Context</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Started</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Revision</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Ended</th>
                 </tr>
               </thead>
               <tbody>
-                {completed.map(r => {
-                  const agent = r.agent_id ? agentMap.get(r.agent_id) : null;
-                  return (
-                    <tr key={r.id} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-hover)] transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="text-sm font-medium">{r.title}</div>
-                        <div className="text-xs text-[var(--color-text-muted)]">{r.summary}</div>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">{agent?.name ?? '—'}</td>
-                      <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
-                      <td className="px-4 py-3 text-xs font-mono text-[var(--color-text-secondary)]">{(r.context_length / 1000).toFixed(0)}k</td>
-                      <td className="px-4 py-3 text-xs text-[var(--color-text-muted)]">{timeAgo(r.started_at)}</td>
-                    </tr>
-                  );
-                })}
+                {completed.map(f => (
+                  <tr key={f.flow_id} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-hover)] transition-colors">
+                    <td className="px-4 py-3 text-sm font-medium">{f.name}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">{f.agent_emoji} {f.agent_name}</td>
+                    <td className="px-4 py-3"><StatusBadge status={f.status} /></td>
+                    <td className="px-4 py-3 text-xs font-mono text-[var(--color-text-secondary)]">{f.revision}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--color-text-muted)]">{f.ended_at ? timeAgo(f.ended_at) : '—'}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </section>
+      )}
+
+      {flows.length === 0 && (
+        <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-12 text-center">
+          <p className="text-sm text-[var(--color-text-muted)]">No flow runs yet.</p>
+        </div>
       )}
     </div>
   );

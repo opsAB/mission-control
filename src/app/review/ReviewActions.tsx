@@ -3,8 +3,8 @@
 import { useRouter } from 'next/navigation';
 
 interface ReviewActionsProps {
-  type: 'task' | 'artifact';
-  id: number;
+  type: 'task' | 'flow' | 'artifact';
+  id: string;
   serveUrl?: string;
 }
 
@@ -12,21 +12,17 @@ export default function ReviewActions({ type, id, serveUrl }: ReviewActionsProps
   const router = useRouter();
 
   async function handleAction(action: 'approve' | 'revision') {
-    const endpoint = type === 'task' ? '/api/tasks' : '/api/review';
-    const body = type === 'task'
-      ? { id, status: action === 'approve' ? 'done' : 'active' }
-      : { id, review_status: action === 'approve' ? 'approved' : 'revision_requested' };
-
-    await fetch(endpoint, {
+    const review_status = action === 'approve' ? 'approved' : 'revision_requested';
+    await fetch('/api/review', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ type, id, review_status }),
     });
     router.refresh();
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 shrink-0">
       {serveUrl && (
         <a
           href={serveUrl}
