@@ -35,18 +35,32 @@ export async function POST(req: NextRequest) {
     if (n === 0 && !allow_no_artifact) {
       const dispatch = db.prepare('SELECT id, title FROM mc_dispatched_tasks WHERE id = ?').get(dispatch_id) as
         | { id: number; title: string } | undefined;
+      const subjectTitle = dispatch?.title ?? `dispatch #${dispatch_id}`;
       await createAlert({
         severity: 'alert',
-        title: `Silent-done blocked: dispatch #${dispatch_id}`,
+        title: `Silent-done blocked: ${subjectTitle}`,
         body:
-          `Agent "${agent_id}" tried to mark dispatch #${dispatch_id}` +
-          (dispatch ? ` ("${dispatch.title}")` : '') +
-          ` done with no artifact. Summary given: "${summary || '(none)'}". ` +
-          `Either register an artifact with --dispatch-id ${dispatch_id}, or mark it failed if the work couldn't be done. ` +
-          `The dispatch was NOT marked done.`,
+          `Agent "${agent_id}" tried to mark this done with no deliverable. ` +
+          `Summary given: "${summary || '(none)'}". The dispatch was NOT marked done.`,
         agent_id: 'mc',
         entity_type: 'dispatch',
         entity_id: String(dispatch_id),
+        telegram_payload: {
+          kind: 'silent_done_blocked',
+          headline: 'Silent-done blocked',
+          subject_title: subjectTitle,
+          sections: [
+            {
+              text:
+                `${agent_id === 'main' ? 'Alfred' : agent_id} tried to mark this done with nothing delivered. ` +
+                `It's still open — not marked done.`,
+            },
+            ...(summary
+              ? [{ label: 'What the agent said', text: `"${summary}"` }]
+              : []),
+          ],
+          action_hint: 'Open MC → Dispatch to decide: retry, reassign, or handle yourself.',
+        },
       });
       return Response.json(
         {
@@ -85,16 +99,25 @@ export async function POST(req: NextRequest) {
     if (status === 'failed') {
       const dispatch = db.prepare('SELECT id, title FROM mc_dispatched_tasks WHERE id = ?').get(dispatch_id) as
         | { id: number; title: string } | undefined;
+      const subjectTitle = dispatch?.title ?? `dispatch #${dispatch_id}`;
+      const prettyAgent = agent_id === 'main' ? 'Alfred' : agent_id;
       await createAlert({
         severity: 'alert',
-        title: `Dispatch #${dispatch_id} failed`,
-        body:
-          `Agent "${agent_id}" could not complete dispatch #${dispatch_id}` +
-          (dispatch ? ` ("${dispatch.title}")` : '') +
-          `. Reason: "${summary || '(no reason given)'}". Review and decide whether to retry, reassign, or handle manually.`,
+        title: `Task failed: ${subjectTitle}`,
+        body: `${prettyAgent} could not complete this. Reason: "${summary || '(no reason given)'}".`,
         agent_id,
         entity_type: 'dispatch',
         entity_id: String(dispatch_id),
+        telegram_payload: {
+          kind: 'dispatch_failed',
+          headline: 'Task failed',
+          subject_title: subjectTitle,
+          sections: [
+            { text: `${prettyAgent} couldn't complete this one.` },
+            { label: 'Reason', text: summary || '(no reason given)' },
+          ],
+          action_hint: 'Open MC → Dispatch to retry, reassign, or handle yourself.',
+        },
       });
     }
   }

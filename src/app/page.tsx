@@ -94,8 +94,9 @@ export default function OverviewPage() {
           ) : (
             <div className="space-y-2">
               {active.slice(0, 8).map(t => (
-                <div key={t.task_id} className="flex items-center justify-between bg-[var(--color-bg-tertiary)] rounded px-3 py-2 gap-2">
+                <div key={t.task_id} className="running-shimmer flex items-center justify-between bg-[var(--color-bg-tertiary)] rounded px-3 py-2 gap-2">
                   <div className="flex items-center gap-2 min-w-0">
+                    <span className="running-dot" aria-hidden="true" />
                     <span className="text-sm truncate">{t.title}</span>
                     <StalenessIndicator status={t.status} lastUpdate={t.updated_at} />
                   </div>
@@ -165,7 +166,7 @@ export default function OverviewPage() {
           <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-3">Recent Activity</h2>
           <div className="space-y-1">
             {activity.map(a => (
-              <div key={a.id} className="flex items-center justify-between px-2 py-1.5">
+              <div key={a.id} className="slide-in-row flex items-center justify-between px-2 py-1.5 rounded">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-xs text-[var(--color-text-muted)] font-mono w-14 shrink-0">{a.entity_type}</span>
                   <span className="text-xs text-[var(--color-text-muted)] w-16 shrink-0">{a.action}</span>
@@ -174,6 +175,9 @@ export default function OverviewPage() {
                 <span className="text-xs text-[var(--color-text-muted)] shrink-0 ml-2">{timeAgo(a.timestamp)}</span>
               </div>
             ))}
+            {activity.length === 0 && (
+              <p className="text-sm text-[var(--color-text-muted)]">No activity yet — dispatches and agent status updates will stream in here.</p>
+            )}
           </div>
         </section>
       </div>

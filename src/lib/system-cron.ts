@@ -55,12 +55,36 @@ function nextCronRun(expr: string, from: Date = new Date()): number | undefined 
   return undefined;
 }
 
-// Extract a human-friendly name from the command: strip redirects and take
-// the script filename, else the first token.
+// Friendly names for Alex's known recurring jobs, matched against the command
+// text. First pattern that matches wins. To rename a job, either edit this
+// mapping or add a `# Human name` comment line above the job in crontab.
+const COMMAND_NAME_MAP: Array<{ match: RegExp; name: string }> = [
+  { match: /morning-report-wrapper\.py/, name: 'Morning brief' },
+  { match: /ftl-intel-watchdog\.py/, name: 'FTL Intel watchdog' },
+  { match: /ftl-intel-wrapper\.py/, name: 'FTL Intel — daily snapshot' },
+  { match: /whoop_sync\.py/, name: 'Whoop health sync' },
+  { match: /openclaw\s+update/, name: 'OpenClaw daily update' },
+];
+
+// Extract a human-friendly name from the command. Precedence:
+//   1. Known-job mapping above
+//   2. Script filename stripped of extension, prettified
+//   3. First token
 function nameFromCommand(cmd: string): string {
   const noRedir = cmd.replace(/\s*>[>&]?\s*\S+.*$/g, '').replace(/\s*2>[>&]?\s*\S+.*$/g, '').trim();
-  const scriptMatch = noRedir.match(/[\w.-]+\.(?:py|sh|js|ts|rb)(?=\s|$)/);
-  if (scriptMatch) return scriptMatch[0];
+
+  for (const entry of COMMAND_NAME_MAP) {
+    if (entry.match.test(noRedir)) return entry.name;
+  }
+
+  const scriptMatch = noRedir.match(/([\w.-]+)\.(?:py|sh|js|ts|rb)(?=\s|$)/);
+  if (scriptMatch) {
+    const base = scriptMatch[1]
+      .replace(/[_-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  }
   const firstWord = noRedir.split(/\s+/)[0];
   return (firstWord ?? cmd).slice(0, 80);
 }

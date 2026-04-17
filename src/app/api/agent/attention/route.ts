@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { getSettings } from '@/lib/settings';
 import { broadcast } from '@/lib/events';
 import { sendTelegram } from '@/lib/telegram';
+import { formatTelegramAlert } from '@/lib/telegram_format';
 
 // POST /api/agent/attention
 // Body: { agent_id, severity?, title, body?, entity_type?, entity_id? }
@@ -34,7 +35,14 @@ export async function POST(req: NextRequest) {
   if (shouldNotify && settings.telegram_enabled) {
     const thresholdOk = matchesAttentionThreshold(severity, settings.attention_threshold);
     if (thresholdOk) {
-      const sent = await sendTelegram(formatAlertForTelegram(agent_id, severity, title, body));
+      const sent = await sendTelegram(
+        formatTelegramAlert({
+          severity,
+          agent_id,
+          headline: title,
+          sections: body ? [{ text: body }] : [],
+        })
+      );
       if (sent) {
         telegramSent = true;
         getDb().prepare(`UPDATE alerts SET telegram_sent_at = datetime('now') WHERE id = ?`).run(id);
@@ -59,10 +67,3 @@ function matchesAttentionThreshold(severity: string, threshold: string): boolean
   return severity === 'alert';
 }
 
-function formatAlertForTelegram(agentId: string, severity: string, title: string, body: string): string {
-  const icon = severity === 'alert' ? '🚨' : severity === 'watch' ? '⚠️' : 'ℹ️';
-  const agentLabel = agentId === 'main' ? 'Alfred' : agentId;
-  const parts = [`${icon} *${title}*`, `_from ${agentLabel}_`];
-  if (body) parts.push('', body);
-  return parts.join('\n');
-}

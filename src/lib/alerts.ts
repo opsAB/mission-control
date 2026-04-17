@@ -56,9 +56,12 @@ export function markAllRead() {
   getDb().prepare(`UPDATE alerts SET read_at = datetime('now') WHERE read_at IS NULL`).run();
 }
 
-// Create an alert and route it through the same Telegram pipeline as /api/agent/attention.
-// Used by internal server-side triggers (e.g. contract violations) that need to raise
-// loud alerts without going through the HTTP layer.
+import { formatTelegramAlert, type TelegramAlertPayload } from './telegram_format';
+
+// Create an alert, persist it, broadcast it, and route an opinionated Telegram
+// message through the shared formatter. Use `telegram_payload` to drive the
+// structured Telegram layout (sections, action hints, subject title); the DB
+// alert row stores the plain `title` + `body` for the MC UI.
 export async function createAlert(params: {
   severity: 'info' | 'watch' | 'alert';
   title: string;
@@ -66,9 +69,10 @@ export async function createAlert(params: {
   agent_id?: string | null;
   entity_type?: string | null;
   entity_id?: string | null;
+  telegram_payload?: Omit<TelegramAlertPayload, 'severity' | 'agent_id'>;
 }): Promise<{ id: number; telegram_sent: boolean }> {
   ensureInit();
-  const { severity, title, body = '', agent_id = null, entity_type = null, entity_id = null } = params;
+  const { severity, title, body = '', agent_id = null, entity_type = null, entity_id = null, telegram_payload } = params;
   const result = getDb().prepare(`
     INSERT INTO alerts (severity, title, body, agent_id, entity_type, entity_id)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -79,11 +83,15 @@ export async function createAlert(params: {
   const settings = getSettings();
   let telegramSent = false;
   if (settings.telegram_enabled && thresholdAllows(severity, settings.attention_threshold)) {
-    const agentLabel = agent_id === 'main' ? 'Alfred' : agent_id === 'mc' ? 'Mission Control' : (agent_id || 'system');
-    const icon = severity === 'alert' ? '🚨' : severity === 'watch' ? '⚠️' : 'ℹ️';
-    const msg = [`${icon} *${title}*`, `_from ${agentLabel}_`];
-    if (body) msg.push('', body);
-    const sent = await sendTelegram(msg.join('\n'));
+    const payload: TelegramAlertPayload = telegram_payload
+      ? { severity, agent_id, ...telegram_payload }
+      : {
+          severity,
+          agent_id,
+          headline: title,
+          sections: body ? [{ text: body }] : [],
+        };
+    const sent = await sendTelegram(formatTelegramAlert(payload));
     if (sent) {
       telegramSent = true;
       getDb().prepare(`UPDATE alerts SET telegram_sent_at = datetime('now') WHERE id = ?`).run(id);
