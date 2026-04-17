@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getAllArtifacts, getAllProjects } from '@/lib/queries';
-import { fileTypeLabel, formatEstTimestamp } from '@/lib/format';
+import { fileTypeLabel, formatEstTimestamp, agentDisplayName } from '@/lib/format';
 import StatusBadge from '@/components/StatusBadge';
 
 export const dynamic = 'force-dynamic';
@@ -52,7 +52,7 @@ export default function DocsPage() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">{a.agent_id ?? a.owner}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">{agentDisplayName(a.agent_id, a.owner)}</td>
                     <td className="px-4 py-3"><StatusBadge status={a.review_status} /></td>
                     <td className="px-4 py-3 text-xs text-[var(--color-text-muted)] whitespace-nowrap">{formatEstTimestamp(a.created_at)}</td>
                     <td className="px-4 py-3">

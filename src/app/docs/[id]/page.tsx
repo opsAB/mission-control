@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getArtifactById, getAllProjects } from '@/lib/queries';
 import { renderArtifact } from '@/lib/render';
-import { fileTypeLabel, formatEstTimestamp } from '@/lib/format';
+import { fileTypeLabel, formatEstTimestamp, agentDisplayName } from '@/lib/format';
 import StatusBadge from '@/components/StatusBadge';
 import ArtifactReview from './ArtifactReview';
 
@@ -35,7 +35,7 @@ export default async function ArtifactDetailPage({ params }: { params: Promise<{
                 {project.name}
               </span>
             )}
-            <span>{artifact.agent_id ?? artifact.owner}</span>
+            <span>{agentDisplayName(artifact.agent_id, artifact.owner)}</span>
             <span>{formatEstTimestamp(artifact.created_at)}</span>
             {rendered.size != null && <span>{formatSize(rendered.size)}</span>}
           </div>

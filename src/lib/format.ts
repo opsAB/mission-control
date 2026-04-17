@@ -1,44 +1,24 @@
 import path from 'path';
 
-const EXT_LABEL: Record<string, string> = {
-  '.md': 'Markdown',
-  '.markdown': 'Markdown',
-  '.pdf': 'PDF',
-  '.docx': 'DOCX',
-  '.doc': 'DOC',
-  '.xlsx': 'XLSX',
-  '.xls': 'XLS',
-  '.pptx': 'PPTX',
-  '.csv': 'CSV',
-  '.tsv': 'TSV',
-  '.txt': 'Text',
-  '.log': 'Log',
-  '.json': 'JSON',
-  '.html': 'HTML',
-  '.htm': 'HTML',
-  '.png': 'PNG',
-  '.jpg': 'JPEG',
-  '.jpeg': 'JPEG',
-  '.gif': 'GIF',
-  '.svg': 'SVG',
-  '.webp': 'WEBP',
-  '.js': 'JavaScript',
-  '.ts': 'TypeScript',
-  '.tsx': 'TSX',
-  '.jsx': 'JSX',
-  '.py': 'Python',
-  '.sh': 'Shell',
-  '.yaml': 'YAML',
-  '.yml': 'YAML',
-  '.toml': 'TOML',
-  '.zip': 'ZIP',
+// Display-name overrides for agent_ids that don't match their persona name.
+// OpenClaw stores the orchestrator as id "main" with no name — we render that as "Alfred".
+const AGENT_NAME_OVERRIDES: Record<string, string> = {
+  main: 'Alfred',
 };
+
+export function agentDisplayName(agentId: string | null | undefined, fallbackName?: string | null): string {
+  if (!agentId) return fallbackName ?? '—';
+  const override = AGENT_NAME_OVERRIDES[agentId];
+  if (override) return override;
+  if (fallbackName && fallbackName !== agentId) return fallbackName;
+  return agentId.charAt(0).toUpperCase() + agentId.slice(1);
+}
 
 export function fileTypeLabel(filePath: string | null | undefined): string {
   if (!filePath) return '—';
   const ext = path.extname(filePath).toLowerCase();
   if (!ext) return '—';
-  return EXT_LABEL[ext] ?? ext.replace(/^\./, '').toUpperCase();
+  return ext;
 }
 
 // SQLite datetime('now') stores UTC as 'YYYY-MM-DD HH:MM:SS' with no TZ suffix.

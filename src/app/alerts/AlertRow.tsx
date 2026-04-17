@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import type { Alert } from '@/lib/alerts';
+import { agentDisplayName } from '@/lib/format';
 
 const severityStyles: Record<string, string> = {
   info: 'bg-blue-500/5 border-blue-500/20 text-blue-400',
@@ -29,7 +30,7 @@ export default function AlertRow({ alert, timeAgoStr }: { alert: Alert; timeAgoS
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-mono uppercase">{alert.severity}</span>
-            {alert.agent_id && <span className="text-xs text-[var(--color-text-muted)]">{alert.agent_id === 'main' ? 'Alfred' : alert.agent_id}</span>}
+            {alert.agent_id && <span className="text-xs text-[var(--color-text-muted)]">{agentDisplayName(alert.agent_id)}</span>}
             {alert.telegram_sent_at && <span className="text-xs text-[var(--color-text-muted)]">📱 sent</span>}
             {unread && <span className="text-xs text-[var(--color-accent)] font-semibold">● NEW</span>}
           </div>

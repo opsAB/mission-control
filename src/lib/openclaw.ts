@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { agentDisplayName } from './format';
 
 const OPENCLAW_HOME = process.env.OPENCLAW_HOME || path.join(os.homedir(), '.openclaw');
 
@@ -99,12 +100,17 @@ export function getOpenClawAgents(): OCAgent[] {
       name?: string;
       workspace?: string;
       identity?: { name?: string; emoji?: string };
-    }) => ({
-      id: a.id,
-      name: a.identity?.name ?? a.name ?? a.id,
-      emoji: a.identity?.emoji ?? '',
-      workspace: a.workspace,
-    }));
+    }) => {
+      const rawName = a.identity?.name ?? a.name ?? a.id;
+      // Apply MC-level persona names for ids that don't carry one from OpenClaw.
+      const name = agentDisplayName(a.id, rawName);
+      return {
+        id: a.id,
+        name,
+        emoji: a.identity?.emoji ?? '',
+        workspace: a.workspace,
+      };
+    });
   } catch {
     return [];
   }
