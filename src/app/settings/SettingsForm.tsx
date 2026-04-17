@@ -36,6 +36,29 @@ export default function SettingsForm({ initial, telegramConfigured }: Props) {
     alert(data.ok ? 'Test message sent. Check Telegram.' : `Failed: ${data.error ?? 'unknown'}`);
   }
 
+  async function sendDigestNow() {
+    const res = await fetch('/api/digest', { method: 'POST' });
+    const data = await res.json();
+    if (data.sent) {
+      const note = data.fallback_used ? ' (sent as plain text — markdown was rejected, check formatting)' : '';
+      alert('Digest sent to Telegram.' + note);
+    } else if (data.error) {
+      alert(`Digest compiled but not sent.\n\nReason: ${data.error}`);
+    } else {
+      alert('Digest compiled but Telegram is disabled.');
+    }
+  }
+
+  async function previewDigest() {
+    const res = await fetch('/api/digest');
+    const body = await res.text();
+    const w = window.open('', '_blank', 'width=700,height=800');
+    if (w) {
+      w.document.write(`<html><head><title>Digest preview</title><style>body{background:#0a0a0f;color:#e8e8ef;font-family:ui-monospace,monospace;padding:2rem;white-space:pre-wrap;line-height:1.6;font-size:13px;}</style></head><body>${body.replace(/</g, '&lt;')}</body></html>`);
+      w.document.close();
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Section title="Mission">
@@ -124,6 +147,22 @@ export default function SettingsForm({ initial, telegramConfigured }: Props) {
             className="mt-1 bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-md px-3 py-2 text-sm font-mono"
           />
         </label>
+        <div className="flex items-center gap-2 mt-4">
+          <button
+            type="button"
+            onClick={previewDigest}
+            className="px-3 py-1.5 text-xs font-medium bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded hover:border-[var(--color-border-light)]"
+          >
+            Preview digest
+          </button>
+          <button
+            type="button"
+            onClick={sendDigestNow}
+            className="px-3 py-1.5 text-xs font-medium bg-[var(--color-accent)] text-white rounded hover:bg-[var(--color-accent-hover)]"
+          >
+            Send digest now
+          </button>
+        </div>
       </Section>
 
       <div className="flex items-center gap-3">
