@@ -158,6 +158,15 @@ export function getAllMcAgents(): McAgent[] {
   });
 }
 
+// SQLite's datetime('now') returns "YYYY-MM-DD HH:MM:SS" in UTC with no timezone suffix.
+// JS parses that as local time and shifts it by the offset. Force UTC parse.
+function parseSqliteTs(ts: string): number {
+  if (!ts) return 0;
+  // Already ISO-with-timezone
+  if (/[TZ]/.test(ts) || /[+-]\d\d:?\d\d$/.test(ts)) return new Date(ts).getTime();
+  return new Date(ts.replace(' ', 'T') + 'Z').getTime();
+}
+
 // ----- Office view (richer agent status) -----
 
 export interface OfficeAgent {
@@ -240,7 +249,7 @@ export function getOfficeAgents(): OfficeAgent[] {
     // Most recent signal: latest task_run event OR latest mc_activity row
     const taskLastMs = myTasks.length ? Math.max(...myTasks.map(t => t.last_event_at ?? t.ended_at ?? t.started_at ?? t.created_at)) : 0;
     const activity = lastActivityByAgent.get(a.id);
-    const activityMs = activity ? new Date(activity.timestamp).getTime() : 0;
+    const activityMs = activity ? parseSqliteTs(activity.timestamp) : 0;
     const lastMs = Math.max(taskLastMs, activityMs);
 
     // Derive activity summary preferring mc_activity, else latest task status
