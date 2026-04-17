@@ -36,7 +36,7 @@ export const PROCESS_QUEUE_PROMPT = `Check Mission Control's dispatch queue and 
 - If assigned to you (main), handle it yourself.
 - If assigned to a specialist, spawn/delegate to them using your existing sub-agent pattern.
 - As you work or delegate, send status updates via \`mc.sh status <agent_id> in_progress "<summary>" --dispatch-id <id>\`.
-- When a deliverable file is produced, register it via \`mc.sh artifact <specialist_id> "<title>" <type> <filepath> --summary "<summary>"\` BEFORE marking the dispatch done.
-- Mark each dispatch done via \`mc.sh status <agent_id> done "<one-line summary>" --dispatch-id <id>\`.
+- When a deliverable file is produced, register it via \`mc.sh artifact <specialist_id> "<title>" <type> <filepath> --summary "<summary>" --dispatch-id <id>\` BEFORE marking the dispatch done. The --dispatch-id is REQUIRED — MC rejects done status on a dispatch with no linked artifact.
+- Mark each dispatch done via \`mc.sh status <agent_id> done "<one-line summary>" --dispatch-id <id>\`. If the dispatch genuinely has no file output, pass \`allow_no_artifact: true\` and \`no_artifact_reason\` in the JSON body instead.
 
 Follow the rules in ~/mission-control/AGENTS.md exactly. Do this now, don't wait for heartbeat.`;

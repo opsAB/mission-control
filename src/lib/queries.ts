@@ -329,8 +329,25 @@ export function getPendingReviewArtifacts(): Artifact[] {
   return db().prepare(`SELECT * FROM artifacts WHERE review_status = 'pending' ORDER BY created_at DESC`).all() as Artifact[];
 }
 
-export function updateArtifactReview(id: number, status: string) {
-  db().prepare('UPDATE artifacts SET review_status = ? WHERE id = ?').run(status, id);
+export function updateArtifactReview(id: number, status: string, note?: string | null) {
+  db().prepare(`
+    UPDATE artifacts
+    SET review_status = ?, review_note = ?, reviewed_at = datetime('now')
+    WHERE id = ?
+  `).run(status, note ?? null, id);
+  db().prepare(`
+    INSERT INTO mc_activity (entity_type, entity_id, action, summary, agent_id)
+    VALUES ('artifact', ?, 'review', ?, 'mission-control')
+  `).run(String(id), `Review: ${status}${note ? ` — ${note.slice(0, 200)}` : ''}`);
+}
+
+export function getArtifactById(id: number): Artifact | null {
+  const row = db().prepare('SELECT * FROM artifacts WHERE id = ?').get(id) as Artifact | undefined;
+  return row ?? null;
+}
+
+export function getArtifactsForDispatch(dispatchId: number): Artifact[] {
+  return db().prepare('SELECT * FROM artifacts WHERE dispatch_id = ? ORDER BY created_at DESC').all(dispatchId) as Artifact[];
 }
 
 // ----- Review queue -----

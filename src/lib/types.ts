@@ -49,8 +49,13 @@ export interface Artifact {
   serve_url: string;
   created_at: string;
   review_status: ReviewStatus;
+  review_note: string | null;
+  reviewed_at: string | null;
   owner: string;
   project_id: number | null;
+  agent_id: string | null;
+  summary: string | null;
+  dispatch_id: number | null;
 }
 
 export interface Project {

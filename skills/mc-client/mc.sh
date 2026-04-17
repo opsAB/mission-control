@@ -13,7 +13,7 @@
 # Subcommands:
 #   mc.sh attention <agent_id> <severity:info|watch|alert> <title> [body] [entity_type] [entity_id]
 #   mc.sh status    <agent_id> <status> [summary] [--task-id <id>] [--dispatch-id <id>]
-#   mc.sh artifact  <agent_id> <title> <type> <filepath> [--task-id <id>] [--flow-id <id>] [--project-id <id>] [--summary <text>]
+#   mc.sh artifact  <agent_id> <title> <type> <filepath> [--task-id <id>] [--flow-id <id>] [--project-id <id>] [--summary <text>] [--dispatch-id <id>]
 #   mc.sh note      <agent_id> <entity_type> <entity_id> <note>
 #   mc.sh poll      <agent_id>            # returns queued dispatched tasks
 #   mc.sh pickup    <dispatch_id> <agent_id> [openclaw_task_id]
@@ -82,13 +82,14 @@ case "$cmd" in
     require_jq
     agent="${1:?agent_id}"; title="${2:?title}"; type="${3:?type}"; filepath="${4:?filepath}"
     shift 4
-    task_id=""; flow_id=""; project_id=""; summary=""
+    task_id=""; flow_id=""; project_id=""; summary=""; dispatch_id=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --task-id) task_id="${2:?}"; shift 2 ;;
         --flow-id) flow_id="${2:?}"; shift 2 ;;
         --project-id) project_id="${2:?}"; shift 2 ;;
         --summary) summary="${2:?}"; shift 2 ;;
+        --dispatch-id) dispatch_id="${2:?}"; shift 2 ;;
         *) shift ;;
       esac
     done
@@ -98,12 +99,12 @@ case "$cmd" in
     filename=$(basename "$filepath")
     if (( size < 500000 )) && file "$filepath" | grep -qE '(text|ASCII|UTF-8)'; then
       content=$(cat "$filepath")
-      json=$(jq -nc --arg a "$agent" --arg t "$title" --arg ty "$type" --arg fn "$filename" --arg c "$content" --arg ti "$task_id" --arg fi "$flow_id" --arg pi "$project_id" --arg sm "$summary" \
-        '{agent_id:$a, title:$t, type:$ty, filename:$fn, content:$c} + (if $ti=="" then {} else {task_id:$ti} end) + (if $fi=="" then {} else {flow_id:$fi} end) + (if $pi=="" then {} else {project_id:($pi|tonumber)} end) + (if $sm=="" then {} else {summary:$sm} end)')
+      json=$(jq -nc --arg a "$agent" --arg t "$title" --arg ty "$type" --arg fn "$filename" --arg c "$content" --arg ti "$task_id" --arg fi "$flow_id" --arg pi "$project_id" --arg sm "$summary" --arg di "$dispatch_id" \
+        '{agent_id:$a, title:$t, type:$ty, filename:$fn, content:$c} + (if $ti=="" then {} else {task_id:$ti} end) + (if $fi=="" then {} else {flow_id:$fi} end) + (if $pi=="" then {} else {project_id:($pi|tonumber)} end) + (if $sm=="" then {} else {summary:$sm} end) + (if $di=="" then {} else {dispatch_id:($di|tonumber)} end)')
     else
       content64=$(base64 -w0 "$filepath")
-      json=$(jq -nc --arg a "$agent" --arg t "$title" --arg ty "$type" --arg fn "$filename" --arg c "$content64" --arg ti "$task_id" --arg fi "$flow_id" --arg pi "$project_id" --arg sm "$summary" \
-        '{agent_id:$a, title:$t, type:$ty, filename:$fn, content_base64:$c} + (if $ti=="" then {} else {task_id:$ti} end) + (if $fi=="" then {} else {flow_id:$fi} end) + (if $pi=="" then {} else {project_id:($pi|tonumber)} end) + (if $sm=="" then {} else {summary:$sm} end)')
+      json=$(jq -nc --arg a "$agent" --arg t "$title" --arg ty "$type" --arg fn "$filename" --arg c "$content64" --arg ti "$task_id" --arg fi "$flow_id" --arg pi "$project_id" --arg sm "$summary" --arg di "$dispatch_id" \
+        '{agent_id:$a, title:$t, type:$ty, filename:$fn, content_base64:$c} + (if $ti=="" then {} else {task_id:$ti} end) + (if $fi=="" then {} else {flow_id:$fi} end) + (if $pi=="" then {} else {project_id:($pi|tonumber)} end) + (if $sm=="" then {} else {summary:$sm} end) + (if $di=="" then {} else {dispatch_id:($di|tonumber)} end)')
     fi
     post_json /api/agent/artifact "$json"
     ;;

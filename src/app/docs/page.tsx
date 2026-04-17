@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getAllArtifacts, getAllProjects } from '@/lib/queries';
 import { timeAgo } from '@/lib/types';
 import StatusBadge from '@/components/StatusBadge';
@@ -39,7 +40,9 @@ export default function DocsPage() {
                 const project = a.project_id ? projectMap.get(a.project_id) : null;
                 return (
                   <tr key={a.id} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-bg-hover)] transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium">{a.title}</td>
+                    <td className="px-4 py-3 text-sm font-medium">
+                      <Link href={`/docs/${a.id}`} className="hover:text-[var(--color-accent)]">{a.title}</Link>
+                    </td>
                     <td className="px-4 py-3"><StatusBadge status={a.type} /></td>
                     <td className="px-4 py-3">
                       {project && (
@@ -53,16 +56,12 @@ export default function DocsPage() {
                     <td className="px-4 py-3"><StatusBadge status={a.review_status} /></td>
                     <td className="px-4 py-3 text-xs text-[var(--color-text-muted)]">{timeAgo(a.created_at)}</td>
                     <td className="px-4 py-3">
-                      {a.serve_url && (
-                        <a
-                          href={a.serve_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-[var(--color-accent)] hover:text-[var(--color-accent-hover)]"
-                        >
-                          Open →
-                        </a>
-                      )}
+                      <Link
+                        href={`/docs/${a.id}`}
+                        className="text-xs text-[var(--color-accent)] hover:text-[var(--color-accent-hover)]"
+                      >
+                        Open →
+                      </Link>
                     </td>
                   </tr>
                 );

@@ -23,7 +23,7 @@ const ARTIFACT_DIR = path.join(process.cwd(), 'data', 'artifacts');
 export async function POST(req: NextRequest) {
   ensureInit();
   const body = await req.json();
-  const { agent_id, title, type = 'document', task_id, flow_id, project_id, summary, content, filename, content_base64 } = body;
+  const { agent_id, title, type = 'document', task_id, flow_id, project_id, summary, content, filename, content_base64, dispatch_id } = body;
   let { file_path, serve_url } = body;
 
   if (!agent_id || !title) {
@@ -45,13 +45,14 @@ export async function POST(req: NextRequest) {
   }
 
   const result = getDb().prepare(`
-    INSERT INTO artifacts (title, type, task_id, flow_id, file_path, serve_url, review_status, owner, project_id, agent_id, summary)
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+    INSERT INTO artifacts (title, type, task_id, flow_id, file_path, serve_url, review_status, owner, project_id, agent_id, summary, dispatch_id)
+    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
   `).run(
     title, type,
     task_id ?? null, flow_id ?? null,
     file_path ?? '', serve_url ?? '',
-    agent_id, project_id ?? null, agent_id, summary ?? null
+    agent_id, project_id ?? null, agent_id, summary ?? null,
+    dispatch_id ?? null
   );
 
   const id = Number(result.lastInsertRowid);

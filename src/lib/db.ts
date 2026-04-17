@@ -137,6 +137,15 @@ function initSchema(db: Database.Database) {
   if (!cols.has('summary')) {
     try { db.exec('ALTER TABLE artifacts ADD COLUMN summary TEXT'); } catch {}
   }
+  if (!cols.has('review_note')) {
+    try { db.exec('ALTER TABLE artifacts ADD COLUMN review_note TEXT'); } catch {}
+  }
+  if (!cols.has('reviewed_at')) {
+    try { db.exec('ALTER TABLE artifacts ADD COLUMN reviewed_at TEXT'); } catch {}
+  }
+  if (!cols.has('dispatch_id')) {
+    try { db.exec('ALTER TABLE artifacts ADD COLUMN dispatch_id INTEGER'); } catch {}
+  }
   const actInfo = db.prepare("PRAGMA table_info(mc_activity)").all() as Array<{ name: string }>;
   if (!actInfo.some(c => c.name === 'agent_id')) {
     try { db.exec('ALTER TABLE mc_activity ADD COLUMN agent_id TEXT'); } catch {}

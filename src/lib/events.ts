@@ -7,6 +7,8 @@ export type McEventType =
   | 'alert_new'
   | 'alert_updated'
   | 'artifact_new'
+  | 'artifact_review'
+  | 'task_review'
   | 'note_new'
   | 'activity_new'
   | 'dispatch_new'
