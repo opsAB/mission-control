@@ -1,0 +1,95 @@
+import { getDb } from './db';
+import { ensureInit } from './init';
+import { getAllMcTasks, getAllMcFlows, getAllMcAgents, getReviewQueue } from './queries';
+import { getRecentAlerts } from './alerts';
+import { getSettings } from './settings';
+import { sendTelegram } from './telegram';
+import { broadcast } from './events';
+
+export async function buildDigest(dateStr: string = new Date().toISOString().slice(0, 10)): Promise<string> {
+  ensureInit();
+  const now = Date.now();
+  const dayMs = 24 * 3600 * 1000;
+  const tasks = getAllMcTasks({ excludeSubagents: true, limit: 300 });
+  const flows = getAllMcFlows();
+  const agents = getAllMcAgents();
+
+  const completedToday = tasks.filter(t => t.status === 'done' && now - new Date(t.updated_at).getTime() < dayMs);
+  const stillActive = tasks.filter(t => t.status === 'active');
+  const blocked = tasks.filter(t => t.status === 'blocked');
+  const needsReview = getReviewQueue().slice(0, 10);
+  const recentAlerts = getRecentAlerts(20).filter(a => now - new Date(a.created_at).getTime() < dayMs);
+
+  const lines: string[] = [];
+  lines.push(`🛰️ *Morning Digest — ${dateStr}*`);
+  lines.push('');
+
+  const settings = getSettings();
+  if (settings.mission_statement) {
+    lines.push(`_Mission: ${settings.mission_statement}_`);
+    lines.push('');
+  }
+
+  lines.push(`*Overnight summary*`);
+  lines.push(`✅ Completed: ${completedToday.length}`);
+  lines.push(`⚙️ Active: ${stillActive.length}`);
+  lines.push(`🚫 Blocked: ${blocked.length}`);
+  lines.push(`📝 Needs review: ${needsReview.length}`);
+  lines.push(`🔔 Alerts (24h): ${recentAlerts.length}`);
+  lines.push('');
+
+  if (blocked.length > 0) {
+    lines.push(`*Blocked — needs your eyes*`);
+    for (const t of blocked.slice(0, 5)) lines.push(`• ${t.agent_emoji} ${t.title}`);
+    lines.push('');
+  }
+
+  if (needsReview.length > 0) {
+    lines.push(`*Ready to review (${needsReview.length})*`);
+    for (const r of needsReview.slice(0, 5)) lines.push(`• ${r.agent_emoji} ${r.title}`);
+    lines.push('');
+  }
+
+  lines.push(`*Agent activity*`);
+  for (const a of agents) {
+    const mine = tasks.filter(t => t.agent_id === a.id);
+    const done = mine.filter(t => t.status === 'done' && now - new Date(t.updated_at).getTime() < dayMs).length;
+    const active = mine.filter(t => t.status === 'active').length;
+    if (done === 0 && active === 0) continue;
+    lines.push(`${a.emoji} ${a.name}: ${done} done · ${active} active`);
+  }
+  lines.push('');
+
+  if (flows.filter(f => f.status === 'active').length > 0) {
+    lines.push(`*Active flows*`);
+    for (const f of flows.filter(f => f.status === 'active').slice(0, 5)) {
+      lines.push(`• ${f.name} (${f.agent_name})`);
+    }
+    lines.push('');
+  }
+
+  lines.push(`_Open Mission Control: http://192.168.12.53:3001_`);
+  return lines.join('\n');
+}
+
+export async function runDigest(forceDate?: string): Promise<{ ok: boolean; sent: boolean; body: string; id: number }> {
+  const body = await buildDigest(forceDate);
+  const dateStr = forceDate ?? new Date().toISOString().slice(0, 10);
+
+  const settings = getSettings();
+  let sent = false;
+  let delivered_via: string | null = null;
+  if (settings.digest_enabled && settings.telegram_enabled) {
+    sent = await sendTelegram(body);
+    if (sent) delivered_via = 'telegram';
+  }
+
+  const result = getDb().prepare(`
+    INSERT INTO digests (digest_date, body_markdown, delivered_via, delivered_at)
+    VALUES (?, ?, ?, ?)
+  `).run(dateStr, body, delivered_via, delivered_via ? new Date().toISOString() : null);
+  const id = Number(result.lastInsertRowid);
+  broadcast('digest_new', { id, dateStr, sent });
+
+  return { ok: true, sent, body, id };
+}

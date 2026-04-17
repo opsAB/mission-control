@@ -24,7 +24,6 @@ function initSchema(db: Database.Database) {
       color TEXT NOT NULL DEFAULT '#6366f1'
     );
 
-    -- MC overlay on OpenClaw tasks: project assignment, review state, notes
     CREATE TABLE IF NOT EXISTS task_overlay (
       task_id TEXT PRIMARY KEY,
       project_id INTEGER REFERENCES projects(id),
@@ -35,7 +34,6 @@ function initSchema(db: Database.Database) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    -- MC overlay on OpenClaw flows
     CREATE TABLE IF NOT EXISTS flow_overlay (
       flow_id TEXT PRIMARY KEY,
       project_id INTEGER REFERENCES projects(id),
@@ -56,7 +54,9 @@ function initSchema(db: Database.Database) {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       review_status TEXT NOT NULL DEFAULT 'none',
       owner TEXT NOT NULL DEFAULT '',
-      project_id INTEGER REFERENCES projects(id)
+      project_id INTEGER REFERENCES projects(id),
+      agent_id TEXT,
+      summary TEXT
     );
 
     CREATE TABLE IF NOT EXISTS mc_activity (
@@ -65,7 +65,95 @@ function initSchema(db: Database.Database) {
       entity_id TEXT NOT NULL,
       action TEXT NOT NULL,
       summary TEXT NOT NULL DEFAULT '',
+      agent_id TEXT,
       timestamp TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Key-value settings store
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Alerts / attention pings from agents to Alex
+    CREATE TABLE IF NOT EXISTS alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      severity TEXT NOT NULL DEFAULT 'info',  -- info | watch | alert
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      agent_id TEXT,
+      entity_type TEXT,
+      entity_id TEXT,
+      read_at TEXT,
+      acknowledged_at TEXT,
+      telegram_sent_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Agent notes attached to tasks/flows
+    CREATE TABLE IF NOT EXISTS agent_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      note TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Tasks that Alex creates in MC and dispatches to agents
+    CREATE TABLE IF NOT EXISTS mc_dispatched_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      assignee_agent_id TEXT NOT NULL,
+      priority TEXT NOT NULL DEFAULT 'medium',
+      project_id INTEGER REFERENCES projects(id),
+      status TEXT NOT NULL DEFAULT 'queued',  -- queued | picked_up | in_progress | done | failed
+      picked_up_at TEXT,
+      completed_at TEXT,
+      openclaw_task_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Daily digest history
+    CREATE TABLE IF NOT EXISTS digests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      digest_date TEXT NOT NULL,
+      body_markdown TEXT NOT NULL,
+      delivered_via TEXT,  -- telegram | email | none
+      delivered_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
+
+  // Migration: add missing columns if DB already existed
+  const tableInfo = db.prepare("PRAGMA table_info(artifacts)").all() as Array<{ name: string }>;
+  const cols = new Set(tableInfo.map(c => c.name));
+  if (!cols.has('agent_id')) {
+    try { db.exec('ALTER TABLE artifacts ADD COLUMN agent_id TEXT'); } catch {}
+  }
+  if (!cols.has('summary')) {
+    try { db.exec('ALTER TABLE artifacts ADD COLUMN summary TEXT'); } catch {}
+  }
+  const actInfo = db.prepare("PRAGMA table_info(mc_activity)").all() as Array<{ name: string }>;
+  if (!actInfo.some(c => c.name === 'agent_id')) {
+    try { db.exec('ALTER TABLE mc_activity ADD COLUMN agent_id TEXT'); } catch {}
+  }
+
+  // Seed default settings
+  const defaults: Record<string, string> = {
+    mission_statement: '',
+    attention_threshold: 'blocked_review_only',  // 'blocked_review_only' | 'plus_thinking' | 'plus_curiosity'
+    telegram_enabled: 'true',
+    telegram_chat_id: '416658381',
+    digest_time: '06:00',
+    digest_enabled: 'true',
+    only_main_pings: 'true',
+  };
+  const existing = db.prepare('SELECT key FROM settings').all() as Array<{ key: string }>;
+  const have = new Set(existing.map(r => r.key));
+  const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+  for (const [k, v] of Object.entries(defaults)) if (!have.has(k)) ins.run(k, v);
 }

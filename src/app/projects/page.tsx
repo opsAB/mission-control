@@ -1,15 +1,21 @@
-import { getAllProjects, getMcTasksByProject, getMcFlowsByProject, getArtifactsByProject } from '@/lib/queries';
+import { getAllProjects, getMcTasksByProject, getMcFlowsByProject, getArtifactsByProject, getAllMcTasks } from '@/lib/queries';
+import AutoTagButton from './AutoTagButton';
 
 export const dynamic = 'force-dynamic';
 
 export default function ProjectsPage() {
   const projects = getAllProjects();
+  const allTasks = getAllMcTasks({ excludeSubagents: true, limit: 1000 });
+  const untagged = allTasks.filter(t => t.project_id == null).length;
 
   return (
     <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold">Projects</h1>
-        <p className="text-sm text-[var(--color-text-secondary)] mt-1">{projects.length} projects</p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Projects</h1>
+          <p className="text-sm text-[var(--color-text-secondary)] mt-1">{projects.length} projects · {untagged} tasks untagged</p>
+        </div>
+        {untagged > 0 && <AutoTagButton />}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -33,7 +39,7 @@ export default function ProjectsPage() {
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-[var(--color-bg-tertiary)] rounded px-3 py-2">
                   <div className="text-lg font-bold text-emerald-400">{active}</div>
-                  <div className="text-xs text-[var(--color-text-muted)]">Active tasks</div>
+                  <div className="text-xs text-[var(--color-text-muted)]">Active</div>
                 </div>
                 <div className={`bg-[var(--color-bg-tertiary)] rounded px-3 py-2 ${blocked > 0 ? 'border border-red-500/20' : ''}`}>
                   <div className={`text-lg font-bold ${blocked > 0 ? 'text-red-400' : 'text-gray-400'}`}>{blocked}</div>
@@ -57,17 +63,6 @@ export default function ProjectsPage() {
             </div>
           );
         })}
-        {projects.length === 0 && (
-          <div className="md:col-span-2 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-8 text-center text-sm text-[var(--color-text-muted)]">
-            No projects yet.
-          </div>
-        )}
-      </div>
-
-      <div className="mt-6 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-4">
-        <p className="text-xs text-[var(--color-text-muted)]">
-          Projects are MC-owned. Tasks can be assigned to a project by writing to the <code className="font-mono">task_overlay</code> table (UI for this coming next).
-        </p>
       </div>
     </div>
   );
