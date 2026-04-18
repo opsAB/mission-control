@@ -52,7 +52,7 @@ export default function DocsTable({ artifacts, projects }: DocsTableProps) {
   const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
 
   async function handleDelete(a: Artifact) {
-    if (deleting) return;
+    if (deleting === a.id) return; // only block duplicate clicks on the SAME row
     const ok = window.confirm(`Delete "${a.title}"? This removes the file and the record permanently.`);
     if (!ok) return;
     setDeleting(a.id);
@@ -61,12 +61,12 @@ export default function DocsTable({ artifacts, projects }: DocsTableProps) {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         alert(`Delete failed: ${err.error ?? res.statusText}`);
-        setDeleting(null);
         return;
       }
       router.refresh();
     } catch (e) {
       alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
       setDeleting(null);
     }
   }
@@ -123,27 +123,18 @@ export default function DocsTable({ artifacts, projects }: DocsTableProps) {
     const subject = encodeURIComponent(a.title);
     const bodyLines = [
       a.summary ?? '',
-      a.summary ? '' : '',
-      `View in Mission Control: ${viewUrl}`,
-      rawUrl ? `Raw file: ${rawUrl}` : '',
       '',
-      '(The file was downloaded to this PC — attach it from your downloads folder before sending.)',
+      `View in Mission Control: ${viewUrl}`,
+      rawUrl ? `Download file: ${rawUrl}` : '',
     ].filter(Boolean);
     const body = encodeURIComponent(bodyLines.join('\n'));
     return `mailto:?subject=${subject}&body=${body}`;
   }
 
   function handleEmail(a: Artifact) {
-    // Trigger download first so Alex has the file in Downloads, then open the mail client.
-    if (a.serve_url) {
-      const link = document.createElement('a');
-      link.href = a.serve_url;
-      link.download = '';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    }
-    setTimeout(() => { window.location.href = mailtoHref(a); }, 150);
+    // Open the mail client with a link to the file; don't auto-download —
+    // user already has a dedicated Download button if they need the file locally.
+    window.location.href = mailtoHref(a);
   }
 
   const selectCls = 'bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded px-2 py-1.5 text-xs text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]';
