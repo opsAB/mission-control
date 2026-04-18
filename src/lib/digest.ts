@@ -82,8 +82,18 @@ export async function buildDigest(dateStr: string = new Date().toISOString().sli
   return lines.join('\n');
 }
 
+// Strip Telegram Markdown so the plain-text fallback body is readable when
+// Telegram rejects parse_mode=Markdown. We don't try to render the markdown,
+// just remove the delimiters the formatter added.
+function stripMarkdown(s: string): string {
+  return s
+    .replace(/\*([^*\n]+)\*/g, '$1')  // *bold*
+    .replace(/_([^_\n]+)_/g, '$1')    // _italic_
+    .replace(/`([^`\n]+)`/g, '$1');   // `code`
+}
+
 export async function runDigest(forceDate?: string): Promise<{ ok: boolean; sent: boolean; error?: string; fallback_used?: boolean; body: string; id: number }> {
-  const body = await buildDigest(forceDate);
+  const markdownBody = await buildDigest(forceDate);
   const dateStr = forceDate ?? new Date().toISOString().slice(0, 10);
 
   const settings = getSettings();
@@ -92,19 +102,24 @@ export async function runDigest(forceDate?: string): Promise<{ ok: boolean; sent
   let error: string | undefined;
   let fallback_used: boolean | undefined;
   if (settings.digest_enabled && settings.telegram_enabled) {
-    const result = await sendTelegramDetailed(body);
+    const result = await sendTelegramDetailed(markdownBody);
     sent = result.ok;
     if (!result.ok) error = result.error;
     fallback_used = result.fallback_used;
     if (sent) delivered_via = fallback_used ? 'telegram_plain' : 'telegram';
   }
 
+  // Persist whichever body was actually delivered. If we fell back to plain
+  // text, store the de-markdownized version so the historical record matches
+  // what Alex saw on his phone.
+  const persistedBody = fallback_used ? stripMarkdown(markdownBody) : markdownBody;
+
   const result = getDb().prepare(`
     INSERT INTO digests (digest_date, body_markdown, delivered_via, delivered_at)
     VALUES (?, ?, ?, ?)
-  `).run(dateStr, body, delivered_via, delivered_via ? new Date().toISOString() : null);
+  `).run(dateStr, persistedBody, delivered_via, delivered_via ? new Date().toISOString() : null);
   const id = Number(result.lastInsertRowid);
   broadcast('digest_new', { id, dateStr, sent });
 
-  return { ok: true, sent, error, fallback_used, body, id };
+  return { ok: true, sent, error, fallback_used, body: persistedBody, id };
 }

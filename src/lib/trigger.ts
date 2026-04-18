@@ -3,6 +3,7 @@
 // than waiting for its heartbeat.
 
 import { exec } from 'child_process';
+import { getPendingTriageAlerts } from './alerts';
 
 export interface TriggerResult {
   ok: boolean;
@@ -10,13 +11,37 @@ export interface TriggerResult {
   error?: string;
 }
 
+// When waking Alfred specifically, prepend any pending specialist alerts
+// so he can triage them as part of his run. The alerts API is still the
+// authoritative source — this just surfaces them early so he doesn't need
+// to remember to poll for them.
+function augmentPromptForMain(message: string): string {
+  try {
+    const pending = getPendingTriageAlerts(10);
+    if (pending.length === 0) return message;
+    const lines = ['', '', '— Pending triage (specialist pings waiting for your call) —'];
+    for (const a of pending) {
+      lines.push(`  #${a.id} [${a.severity}] from ${a.agent_id}: ${a.title}` + (a.body ? ` — ${a.body.slice(0, 140)}` : ''));
+    }
+    lines.push('');
+    lines.push('For each: decide whether to escalate to Alex or ack without bothering him.');
+    lines.push('  Escalate (sends Telegram):  POST /api/alerts/<id>/triage { "decision": "escalated", "triaged_by": "main", "note": "<why>" }');
+    lines.push('  Ack (close silently):       POST /api/alerts/<id>/triage { "decision": "acked",      "triaged_by": "main", "note": "<why>" }');
+    lines.push('Use the same Authorization: Bearer $MC_AGENT_TOKEN header as other /api/agent/* calls.');
+    return message + lines.join('\n');
+  } catch {
+    return message;
+  }
+}
+
 export function triggerAgent(agentId: string, message: string): TriggerResult {
   // Basic safety: agent_id must be alphanumeric-ish; message gets single-quoted.
   if (!/^[a-zA-Z0-9_-]+$/.test(agentId)) {
     return { ok: false, started: false, error: 'Invalid agent_id' };
   }
+  const effectiveMessage = agentId === 'main' ? augmentPromptForMain(message) : message;
   // Escape single quotes for shell single-quoted string: ' -> '\''
-  const escaped = message.replace(/'/g, "'\\''");
+  const escaped = effectiveMessage.replace(/'/g, "'\\''");
   const cmd = `openclaw agent --agent ${agentId} --message '${escaped}' --json`;
 
   // Fire and forget — don't block the HTTP response while Alfred runs.

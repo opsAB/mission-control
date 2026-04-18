@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { ensureInit } from '@/lib/init';
 import { getDb } from '@/lib/db';
 import { broadcast } from '@/lib/events';
+import { requireAgentAuth } from '@/lib/agent-auth';
 import fs from 'fs';
 import path from 'path';
 
@@ -21,6 +22,8 @@ const ARTIFACT_DIR = path.join(process.cwd(), 'data', 'artifacts');
 //   serve_url?                 // optional override; otherwise constructed from filename
 // }
 export async function POST(req: NextRequest) {
+  const authFail = requireAgentAuth(req);
+  if (authFail) return authFail;
   ensureInit();
   const body = await req.json();
   const { agent_id, title, type = 'document', task_id, flow_id, project_id, summary, content, filename, content_base64, dispatch_id } = body;
@@ -32,9 +35,20 @@ export async function POST(req: NextRequest) {
 
   // If inline content was posted, write it to disk
   if ((content || content_base64) && filename) {
+    // Explicitly reject path separators and traversal fragments. The sanitizer
+    // below would map these to underscores, but a noisy reject surfaces bad
+    // client code faster than a silent rename.
+    if (typeof filename !== 'string' || filename.includes('/') || filename.includes('\\') || filename.includes('..') || filename.startsWith('.')) {
+      return Response.json({ error: 'invalid_filename', message: 'filename must be a plain basename (no slashes, no "..", no leading dot)' }, { status: 400 });
+    }
     if (!fs.existsSync(ARTIFACT_DIR)) fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
     const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fullPath = path.join(ARTIFACT_DIR, safeName);
+    const resolvedDir = path.resolve(ARTIFACT_DIR);
+    const fullPath = path.resolve(resolvedDir, safeName);
+    // Belt-and-braces: even after sanitizing, verify the resolved path is still inside ARTIFACT_DIR.
+    if (!fullPath.startsWith(resolvedDir + path.sep)) {
+      return Response.json({ error: 'invalid_filename', message: 'resolved path escapes artifact dir' }, { status: 400 });
+    }
     if (content_base64) {
       fs.writeFileSync(fullPath, Buffer.from(content_base64, 'base64'));
     } else {

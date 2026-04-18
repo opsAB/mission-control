@@ -10,6 +10,10 @@
 # Export MC_URL if running somewhere other than localhost:
 #   export MC_URL=http://127.0.0.1:3001
 #
+# Auth: if MC_AGENT_TOKEN env var is set, or openclaw.json has .mc_auth_token,
+# it's sent as "Authorization: Bearer <token>". If MC has no token configured,
+# auth is skipped (with a server-side warning log).
+#
 # Subcommands:
 #   mc.sh attention <agent_id> <severity:info|watch|alert> <title> [body] [entity_type] [entity_id]
 #   mc.sh status    <agent_id> <status> [summary] [--task-id <id>] [--dispatch-id <id>] [--allow-no-artifact] [--no-artifact-reason <text>]
@@ -17,6 +21,9 @@
 #   mc.sh note      <agent_id> <entity_type> <entity_id> <note>
 #   mc.sh poll      <agent_id>            # returns queued dispatched tasks
 #   mc.sh pickup    <dispatch_id> <agent_id> [openclaw_task_id]
+#   mc.sh triage-pending                                         # Alfred only — lists specialist alerts waiting for triage
+#   mc.sh triage-escalate <alert_id> <triaged_by> [note]         # Alfred promotes to Alex's Telegram
+#   mc.sh triage-ack      <alert_id> <triaged_by> [note]         # Alfred closes without notifying Alex
 #
 # Exit codes:
 #   0 on success, 1 on HTTP error, 2 on usage error.
@@ -31,11 +38,35 @@ require_jq() {
   command -v jq >/dev/null 2>&1 || die "jq required (apt-get install jq)"
 }
 
+# Resolve the MC auth token from (in order): MC_AGENT_TOKEN env, then
+# ~/.openclaw/openclaw.json .mc_auth_token. Empty string if neither is set;
+# MC will reject the request if auth is enforced server-side.
+resolve_token() {
+  if [[ -n "${MC_AGENT_TOKEN:-}" ]]; then
+    printf '%s' "$MC_AGENT_TOKEN"
+    return
+  fi
+  local cfg="${OPENCLAW_HOME:-$HOME/.openclaw}/openclaw.json"
+  if [[ -f "$cfg" ]] && command -v jq >/dev/null 2>&1; then
+    jq -r '.mc_auth_token // empty' "$cfg" 2>/dev/null || true
+  fi
+}
+
+auth_header_args() {
+  local tok
+  tok="$(resolve_token)"
+  if [[ -n "$tok" ]]; then
+    printf -- '-H\nAuthorization: Bearer %s\n' "$tok"
+  fi
+}
+
 post_json() {
   local path="$1"; shift
   local body="$1"; shift
   local resp
-  resp="$(curl -sS -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "$body" "$MC_URL$path")"
+  local auth_args=()
+  while IFS= read -r line; do auth_args+=("$line"); done < <(auth_header_args)
+  resp="$(curl -sS -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' "${auth_args[@]}" -d "$body" "$MC_URL$path")"
   local code="${resp##*$'\n'}"
   local data="${resp%$'\n'*}"
   echo "$data"
@@ -45,7 +76,9 @@ post_json() {
 get_json() {
   local path="$1"; shift
   local resp
-  resp="$(curl -sS -w '\n%{http_code}' "$MC_URL$path")"
+  local auth_args=()
+  while IFS= read -r line; do auth_args+=("$line"); done < <(auth_header_args)
+  resp="$(curl -sS -w '\n%{http_code}' "${auth_args[@]}" "$MC_URL$path")"
   local code="${resp##*$'\n'}"
   local data="${resp%$'\n'*}"
   echo "$data"
@@ -132,6 +165,26 @@ case "$cmd" in
     json=$(jq -nc --arg d "$dispatch_id" --arg a "$agent" --arg t "$oc_task" \
       '{dispatch_id:($d|tonumber), agent_id:$a} + (if $t=="" then {} else {openclaw_task_id:$t} end)')
     post_json /api/agent/dispatch "$json"
+    ;;
+  triage-pending)
+    # List specialist-raised alerts waiting for triage (Alfred's queue).
+    get_json "/api/alerts/pending-triage"
+    ;;
+  triage-escalate)
+    # Alfred promotes an alert → Alex's Telegram.
+    require_jq
+    alert_id="${1:?alert_id}"; triaged_by="${2:?triaged_by}"; note="${3:-}"
+    json=$(jq -nc --arg b "$triaged_by" --arg n "$note" \
+      '{decision:"escalated", triaged_by:$b} + (if $n=="" then {} else {note:$n} end)')
+    post_json "/api/alerts/$alert_id/triage" "$json"
+    ;;
+  triage-ack)
+    # Alfred acknowledges an alert → closed without bothering Alex.
+    require_jq
+    alert_id="${1:?alert_id}"; triaged_by="${2:?triaged_by}"; note="${3:-}"
+    json=$(jq -nc --arg b "$triaged_by" --arg n "$note" \
+      '{decision:"acked", triaged_by:$b} + (if $n=="" then {} else {note:$n} end)')
+    post_json "/api/alerts/$alert_id/triage" "$json"
     ;;
   help|"")
     sed -n '1,35p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'

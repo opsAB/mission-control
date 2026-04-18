@@ -1,4 +1,4 @@
-import { subscribe, type McEvent } from '@/lib/events';
+import { subscribe, registerShutdownHandler, type McEvent } from '@/lib/events';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +16,9 @@ export async function GET() {
       // initial hello
       send({ type: 'heartbeat', ts: Date.now() });
       const unsub = subscribe(send);
-      const closed = () => { unsub(); try { controller.close(); } catch {} };
+      const close = () => { try { controller.close(); } catch {} };
+      const unregister = registerShutdownHandler(close);
+      const closed = () => { unsub(); unregister(); close(); };
       // close on abort
       return closed;
     },

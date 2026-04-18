@@ -5,13 +5,21 @@ import { getSettings } from '@/lib/settings';
 import { broadcast } from '@/lib/events';
 import { sendTelegram } from '@/lib/telegram';
 import { formatTelegramAlert } from '@/lib/telegram_format';
+import { requireAgentAuth } from '@/lib/agent-auth';
 
 // POST /api/agent/attention
 // Body: { agent_id, severity?, title, body?, entity_type?, entity_id? }
-// Agents call this to request Alex's attention.
-// If only_main_pings is on and caller is not 'main' (Alfred), the alert is routed
-// to Alfred's triage queue (stored, but not pushed to Telegram).
+//
+// When only_main_pings=true and caller is not Alfred (agent_id !== 'main'),
+// the alert is queued for Alfred to triage — it's NOT sent to Telegram here.
+// Alfred later calls GET /api/alerts/pending-triage on wake and decides per
+// alert whether to POST /api/alerts/:id/triage with decision='escalated'
+// (→ Telegram) or decision='acked' (→ close without bothering Alex).
+// A scheduler-side fallback auto-escalates anything left pending for >24h
+// so nothing is truly lost.
 export async function POST(req: NextRequest) {
+  const authFail = requireAgentAuth(req);
+  if (authFail) return authFail;
   ensureInit();
   const { agent_id, severity = 'info', title, body = '', entity_type, entity_id } = await req.json();
   if (!agent_id || !title) {
@@ -20,7 +28,7 @@ export async function POST(req: NextRequest) {
 
   const settings = getSettings();
   const isMain = agent_id === 'main';
-  const shouldNotify = !settings.only_main_pings || isMain;
+  const queuedForTriage = !isMain && settings.only_main_pings;
 
   const result = getDb().prepare(`
     INSERT INTO alerts (severity, title, body, agent_id, entity_type, entity_id)
@@ -28,11 +36,11 @@ export async function POST(req: NextRequest) {
   `).run(severity, title, body, agent_id, entity_type ?? null, entity_id ?? null);
 
   const id = Number(result.lastInsertRowid);
-  broadcast('alert_new', { id, severity, title, agent_id });
+  broadcast('alert_new', { id, severity, title, agent_id, queued_for_triage: queuedForTriage });
 
-  // Telegram: only if shouldNotify + telegram enabled + severity >= attention_threshold
+  // Telegram: only if NOT queued-for-triage AND telegram enabled AND severity meets threshold
   let telegramSent = false;
-  if (shouldNotify && settings.telegram_enabled) {
+  if (!queuedForTriage && settings.telegram_enabled) {
     const thresholdOk = matchesAttentionThreshold(severity, settings.attention_threshold);
     if (thresholdOk) {
       const sent = await sendTelegram(
@@ -53,7 +61,7 @@ export async function POST(req: NextRequest) {
   return Response.json({
     ok: true,
     id,
-    routed_to_main: !isMain && settings.only_main_pings,
+    queued_for_triage: queuedForTriage,
     telegram_sent: telegramSent,
   });
 }

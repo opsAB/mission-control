@@ -3,6 +3,7 @@ import { ensureInit } from '@/lib/init';
 import { getDb } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import { createAlert } from '@/lib/alerts';
+import { requireAgentAuth } from '@/lib/agent-auth';
 
 // POST /api/agent/status
 // Body: { agent_id, task_id?, dispatch_id?, status, summary?, allow_no_artifact?, no_artifact_reason? }
@@ -12,6 +13,8 @@ import { createAlert } from '@/lib/alerts';
 // alert-severity alert to Alex so silent completions are surfaced loudly.
 // `failed` always raises an alert so Alex learns when work couldn't be done.
 export async function POST(req: NextRequest) {
+  const authFail = requireAgentAuth(req);
+  if (authFail) return authFail;
   ensureInit();
   const body = await req.json();
   const {

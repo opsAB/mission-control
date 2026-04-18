@@ -2,11 +2,14 @@ import { NextRequest } from 'next/server';
 import { ensureInit } from '@/lib/init';
 import { getDb } from '@/lib/db';
 import { broadcast } from '@/lib/events';
+import { requireAgentAuth } from '@/lib/agent-auth';
 
 // POST /api/agent/note
 // Body: { agent_id, entity_type, entity_id, note }
 // Agents attach a note to a task or flow. Appears in the task detail view and activity feed.
 export async function POST(req: NextRequest) {
+  const authFail = requireAgentAuth(req);
+  if (authFail) return authFail;
   ensureInit();
   const { agent_id, entity_type, entity_id, note } = await req.json();
   if (!agent_id || !entity_type || !entity_id || !note) {

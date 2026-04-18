@@ -114,7 +114,10 @@ export function getOpenClawAgents(): OCAgent[] {
         workspace: a.workspace,
       };
     });
-  } catch {
+  } catch (e) {
+    // Don't swallow silently — a broken openclaw.json showing as "no agents" is a
+    // nightmare to debug. Log and return empty so the app still boots.
+    console.error('[openclaw] failed to read/parse openclaw.json:', e instanceof Error ? e.message : e);
     return [];
   }
 }

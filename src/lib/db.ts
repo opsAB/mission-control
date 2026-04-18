@@ -128,32 +128,37 @@ function initSchema(db: Database.Database) {
     );
   `);
 
-  // Migration: add missing columns if DB already existed
+  // Migration: add missing columns if DB already existed. Only swallow the
+  // "duplicate column" case (racey concurrent boots); re-throw everything else
+  // so real schema failures aren't masked.
+  const addColumn = (table: string, column: string, def: string) => {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/duplicate column/i.test(msg)) return;
+      console.error(`[db] migration failed for ${table}.${column}:`, msg);
+      throw e;
+    }
+  };
+
   const tableInfo = db.prepare("PRAGMA table_info(artifacts)").all() as Array<{ name: string }>;
   const cols = new Set(tableInfo.map(c => c.name));
-  if (!cols.has('agent_id')) {
-    try { db.exec('ALTER TABLE artifacts ADD COLUMN agent_id TEXT'); } catch {}
-  }
-  if (!cols.has('summary')) {
-    try { db.exec('ALTER TABLE artifacts ADD COLUMN summary TEXT'); } catch {}
-  }
-  if (!cols.has('review_note')) {
-    try { db.exec('ALTER TABLE artifacts ADD COLUMN review_note TEXT'); } catch {}
-  }
-  if (!cols.has('reviewed_at')) {
-    try { db.exec('ALTER TABLE artifacts ADD COLUMN reviewed_at TEXT'); } catch {}
-  }
-  if (!cols.has('dispatch_id')) {
-    try { db.exec('ALTER TABLE artifacts ADD COLUMN dispatch_id INTEGER'); } catch {}
-  }
+  if (!cols.has('agent_id')) addColumn('artifacts', 'agent_id', 'TEXT');
+  if (!cols.has('summary')) addColumn('artifacts', 'summary', 'TEXT');
+  if (!cols.has('review_note')) addColumn('artifacts', 'review_note', 'TEXT');
+  if (!cols.has('reviewed_at')) addColumn('artifacts', 'reviewed_at', 'TEXT');
+  if (!cols.has('dispatch_id')) addColumn('artifacts', 'dispatch_id', 'INTEGER');
+
   const actInfo = db.prepare("PRAGMA table_info(mc_activity)").all() as Array<{ name: string }>;
-  if (!actInfo.some(c => c.name === 'agent_id')) {
-    try { db.exec('ALTER TABLE mc_activity ADD COLUMN agent_id TEXT'); } catch {}
-  }
+  if (!actInfo.some(c => c.name === 'agent_id')) addColumn('mc_activity', 'agent_id', 'TEXT');
+
   const alertInfo = db.prepare("PRAGMA table_info(alerts)").all() as Array<{ name: string }>;
-  if (!alertInfo.some(c => c.name === 'dismissed_at')) {
-    try { db.exec('ALTER TABLE alerts ADD COLUMN dismissed_at TEXT'); } catch {}
-  }
+  if (!alertInfo.some(c => c.name === 'dismissed_at')) addColumn('alerts', 'dismissed_at', 'TEXT');
+  if (!alertInfo.some(c => c.name === 'triaged_at')) addColumn('alerts', 'triaged_at', 'TEXT');
+  if (!alertInfo.some(c => c.name === 'triaged_by')) addColumn('alerts', 'triaged_by', 'TEXT');
+  if (!alertInfo.some(c => c.name === 'triage_decision')) addColumn('alerts', 'triage_decision', 'TEXT');
+  if (!alertInfo.some(c => c.name === 'triage_note')) addColumn('alerts', 'triage_note', 'TEXT');
 
   // Seed default settings
   const defaults: Record<string, string> = {

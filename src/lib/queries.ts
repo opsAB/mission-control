@@ -383,7 +383,12 @@ export function setTaskReview(taskId: string, status: string, note?: string) {
     INSERT INTO task_overlay (task_id, review_status, review_note) VALUES (?, ?, ?)
     ON CONFLICT(task_id) DO UPDATE SET review_status = excluded.review_status, review_note = excluded.review_note, updated_at = datetime('now')
   `).run(taskId, status, note ?? null);
-  db().prepare(`INSERT INTO mc_activity (entity_type, entity_id, action, summary, timestamp) VALUES (?, ?, ?, ?, datetime('now'))`).run('task', taskId, 'review', `Review status set to ${status}`);
+  // Attribute the review action to Mission Control so the Office board
+  // and per-agent filters don't drop the row (they filter on agent_id NOT NULL).
+  db().prepare(`
+    INSERT INTO mc_activity (entity_type, entity_id, action, summary, agent_id, timestamp)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+  `).run('task', taskId, 'review', `Review status set to ${status}`, 'mission-control');
 }
 
 // ----- Flows -----

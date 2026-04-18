@@ -31,9 +31,19 @@ Base URL: `http://127.0.0.1:3001/api/agent/*`
 
 A convenience CLI exists at `~/.openclaw/skills/mc-client/mc.sh` (see `skills/mc-client/README.md`). Prefer the CLI over direct curl.
 
+## Auth
+
+All `/api/agent/*` and `/api/alerts/*/triage` endpoints expect an `Authorization: Bearer <token>` header. The token is read from `MC_AGENT_TOKEN` env var or `mc_auth_token` in `~/.openclaw/openclaw.json`. `mc.sh` reads these automatically, so you don't need to think about it. If MC has no token configured, auth is skipped (with a server-side warning log) — but you should still pass the header when available.
+
 ## Hard rules
 
-1. **Only Alfred (agent_id `main`) is authorized to interrupt Alex directly.** Specialists (james, milo, lewis, contractor) may still POST to `/api/agent/attention`, but the server routes non-main pings through Alfred's triage queue — they won't hit Alex's Telegram unless Alfred escalates them.
+1. **Only Alfred (agent_id `main`) is authorized to interrupt Alex directly.** Specialists (james, milo, lewis, contractor) may still POST to `/api/agent/attention`, but the server queues non-main pings for **Alfred's triage** — they won't hit Alex's Telegram unless Alfred decides to escalate.
+
+   **Alfred's triage workflow.** On every wake, Alfred receives the pending triage queue in his prompt (you'll see a section "— Pending triage — ..."). For each entry, he decides:
+   - `mc.sh triage-escalate <alert_id> main "<why this needs Alex>"` → sends to Alex's Telegram
+   - `mc.sh triage-ack <alert_id> main "<why safe to ignore>"` → closes without bothering Alex
+
+   Anything left pending for 24h is auto-escalated by Mission Control so nothing is truly lost.
 
 2. **Heartbeat polling.** On every heartbeat, check `GET /api/agent/dispatch?agent_id=<you>` for tasks Alex sent you. If any returned:
    - `POST /api/agent/dispatch` to claim it (sets status `picked_up`)

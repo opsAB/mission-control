@@ -21,10 +21,12 @@ export async function GET(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   const { path: pathParts } = await params;
-  const filePath = path.join(ARTIFACT_DIR, ...pathParts);
+  const resolvedDir = path.resolve(ARTIFACT_DIR);
+  const filePath = path.resolve(ARTIFACT_DIR, ...pathParts);
 
-  // Prevent directory traversal
-  if (!filePath.startsWith(ARTIFACT_DIR)) {
+  // Boundary check: the resolved path must be the dir itself or strictly below it.
+  // Comparing with `resolvedDir + path.sep` prevents the "/artifacts_evil" bypass.
+  if (filePath !== resolvedDir && !filePath.startsWith(resolvedDir + path.sep)) {
     return new Response('Forbidden', { status: 403 });
   }
 

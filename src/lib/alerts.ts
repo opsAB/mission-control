@@ -16,7 +16,70 @@ export interface Alert {
   acknowledged_at: string | null;
   dismissed_at: string | null;
   telegram_sent_at: string | null;
+  triaged_at: string | null;
+  triaged_by: string | null;
+  triage_decision: 'escalated' | 'acked' | null;
+  triage_note: string | null;
   created_at: string;
+}
+
+// Alerts waiting for Alfred's triage — specialist-raised alerts that the
+// only_main_pings filter silenced. Oldest first so FIFO behavior.
+export function getPendingTriageAlerts(limit: number = 50): Alert[] {
+  ensureInit();
+  return getDb().prepare(`
+    SELECT * FROM alerts
+    WHERE triaged_at IS NULL
+      AND agent_id IS NOT NULL AND agent_id != 'main' AND agent_id != 'mc'
+      AND telegram_sent_at IS NULL
+      AND dismissed_at IS NULL
+    ORDER BY created_at ASC
+    LIMIT ?
+  `).all(limit) as Alert[];
+}
+
+export async function triageAlert(
+  id: number,
+  decision: 'escalated' | 'acked',
+  triagedBy: string,
+  note?: string
+): Promise<{ ok: boolean; telegram_sent?: boolean; error?: string }> {
+  ensureInit();
+  const alert = getDb().prepare('SELECT * FROM alerts WHERE id = ?').get(id) as Alert | undefined;
+  if (!alert) return { ok: false, error: 'alert_not_found' };
+  if (alert.triaged_at) return { ok: false, error: 'already_triaged' };
+
+  getDb().prepare(`
+    UPDATE alerts
+    SET triaged_at = datetime('now'), triaged_by = ?, triage_decision = ?, triage_note = ?
+    WHERE id = ?
+  `).run(triagedBy, decision, note ?? null, id);
+  broadcast('alert_updated', { id, triage_decision: decision });
+
+  let telegramSent = false;
+  if (decision === 'escalated') {
+    const settings = getSettings();
+    if (settings.telegram_enabled) {
+      const { formatTelegramAlert } = await import('./telegram_format');
+      const sent = await sendTelegram(formatTelegramAlert({
+        severity: alert.severity,
+        agent_id: alert.agent_id,
+        kind: 'attention',
+        headline: `Escalated by Alfred: ${alert.title}`,
+        sections: [
+          ...(alert.body ? [{ text: alert.body }] : []),
+          ...(note ? [{ label: "Alfred's note", text: note }] : []),
+        ],
+        action_hint: 'Open MC → Alerts to respond.',
+      }));
+      if (sent) {
+        telegramSent = true;
+        getDb().prepare(`UPDATE alerts SET telegram_sent_at = datetime('now') WHERE id = ?`).run(id);
+      }
+    }
+  }
+
+  return { ok: true, telegram_sent: telegramSent };
 }
 
 export function getRecentAlerts(limit: number = 50, opts: { includeDismissed?: boolean } = {}): Alert[] {
