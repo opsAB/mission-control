@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getAllMcFlows, getAllCronJobs, getAllProjects } from '@/lib/queries';
+import { getAllMcFlows, getAllCronJobs, getAllProjects, getFailedDispatchesWithoutFlow } from '@/lib/queries';
 import { getOpenClawFlowTasks } from '@/lib/openclaw';
 import { humanizeCron } from '@/lib/system-cron';
 import { formatEstTimestamp, agentDisplayName } from '@/lib/format';
@@ -14,6 +14,7 @@ export default function WorkflowsPage() {
   const cron = getAllCronJobs();
   const projects = getAllProjects();
   const projectMap = new Map(projects.map(p => [p.id, p]));
+  const failedDispatches = getFailedDispatchesWithoutFlow(20);
 
   return (
     <div className="p-6 max-w-5xl">
@@ -53,6 +54,41 @@ export default function WorkflowsPage() {
                 </Link>
               );
             })}
+          </div>
+        </section>
+      )}
+
+      {failedDispatches.length > 0 && (
+        <section className="mb-10">
+          <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-3">Failed Dispatches</h2>
+          <div className="bg-[var(--color-bg-tertiary)] border border-[var(--color-border)] rounded-lg px-4 py-2.5 text-xs text-[var(--color-text-secondary)] leading-relaxed mb-3">
+            These dispatches failed without opening a flow — usually because the assigned agent recognized the work as impossible (credential-gated, needs GUI, missing tool) and correctly pre-empted instead of burning compute. Click any card for the dispatch timeline and reason.
+          </div>
+          <div className="space-y-2">
+            {failedDispatches.map(d => (
+              <Link
+                key={d.id}
+                href={`/workflows/dispatch/${d.id}`}
+                className="block bg-[var(--color-bg-secondary)] border border-red-500/40 bg-red-500/5 hover:border-red-500/60 rounded-lg p-4 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-sm font-medium truncate">{d.title}</h3>
+                      <StatusBadge status="failed" />
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
+                      <span>Assignee: {agentDisplayName(d.assignee_agent_id)}</span>
+                      <span>·</span>
+                      <span>no flow opened</span>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-[var(--color-text-muted)] shrink-0">
+                    <div>{d.completed_at ? `Failed ${timeAgo(d.completed_at)}` : `Updated ${timeAgo(d.updated_at)}`}</div>
+                  </div>
+                </div>
+              </Link>
+            ))}
           </div>
         </section>
       )}

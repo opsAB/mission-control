@@ -408,6 +408,114 @@ export interface McFlowStep {
   error: string | null;
 }
 
+export interface McDispatch {
+  id: number;
+  title: string;
+  description: string;
+  assignee_agent_id: string;
+  priority: string;
+  project_id: number | null;
+  status: string;
+  picked_up_at: string | null;
+  completed_at: string | null;
+  openclaw_task_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function getDispatchById(id: number): McDispatch | null {
+  const row = db().prepare('SELECT * FROM mc_dispatched_tasks WHERE id = ?').get(id) as McDispatch | undefined;
+  return row ?? null;
+}
+
+// Failed dispatches that didn't spawn an OpenClaw flow. Alfred pre-empts
+// some work (credential-gated, needs GUI, missing tool) and marks the
+// dispatch failed before opening a flow — the failure still needs to be
+// visible on /workflows so nothing silently disappears.
+export function getFailedDispatchesWithoutFlow(limit = 20): McDispatch[] {
+  return db().prepare(`
+    SELECT * FROM mc_dispatched_tasks
+    WHERE status = 'failed' AND openclaw_task_id IS NULL
+    ORDER BY updated_at DESC
+    LIMIT ?
+  `).all(limit) as McDispatch[];
+}
+
+// Timeline for a single MC dispatch (the pre-empted / no-flow case).
+export function getDispatchTimeline(dispatchId: number): FlowTimelineEvent[] {
+  const d = getDispatchById(dispatchId);
+  if (!d) return [];
+  const agentMap = new Map(oc.getOpenClawAgents().map(a => [a.id, a]));
+  const displayName = (id: string | null): string => {
+    if (!id) return 'Unknown';
+    if (id === 'main') return 'Alfred';
+    if (id === 'mission-control' || id === 'mc' || id === 'system') return 'Mission Control';
+    return agentMap.get(id)?.name ?? (id.charAt(0).toUpperCase() + id.slice(1));
+  };
+  const emojiOf = (id: string | null): string | undefined => id ? agentMap.get(id)?.emoji : undefined;
+
+  const events: FlowTimelineEvent[] = [];
+
+  events.push({
+    ts: d.created_at,
+    actor: 'Alex',
+    icon: '✈',
+    iconColor: 'text-blue-400',
+    text: `Alex dispatched "${d.title}" to ${displayName(d.assignee_agent_id)}`,
+    details: d.description,
+  });
+
+  const activityRows = db().prepare(`
+    SELECT id, action, agent_id, summary, timestamp
+    FROM mc_activity
+    WHERE entity_type = 'dispatch' AND entity_id = ?
+    ORDER BY timestamp ASC
+  `).all(String(dispatchId)) as Array<{ id: number; action: string; agent_id: string | null; summary: string; timestamp: string }>;
+
+  for (const r of activityRows) {
+    const iconMap: Record<string, { icon: string; color: string; verb: string }> = {
+      picked_up: { icon: '→', color: 'text-sky-400', verb: 'picked up the dispatch' },
+      in_progress: { icon: '●', color: 'text-indigo-400', verb: 'reported progress' },
+      done: { icon: '✓', color: 'text-emerald-400', verb: 'marked the dispatch done' },
+      failed: { icon: '✕', color: 'text-red-400', verb: 'marked the dispatch FAILED' },
+      note: { icon: '✎', color: 'text-[var(--color-text-muted)]', verb: 'left a note' },
+    };
+    const i = iconMap[r.action] ?? { icon: '·', color: 'text-[var(--color-text-muted)]', verb: r.action };
+    events.push({
+      ts: new Date(parseSqliteTs(r.timestamp)).toISOString(),
+      actor: displayName(r.agent_id),
+      actor_emoji: emojiOf(r.agent_id),
+      icon: i.icon,
+      iconColor: i.color,
+      text: `${displayName(r.agent_id)} ${i.verb}${r.summary ? `: ${r.summary.slice(0, 200)}` : ''}`,
+      details: r.action === 'failed' ? r.summary : undefined,
+    });
+  }
+
+  const artifactRows = db().prepare(`
+    SELECT id, title, agent_id, created_at, summary
+    FROM artifacts
+    WHERE dispatch_id = ?
+    ORDER BY created_at ASC
+  `).all(dispatchId) as Array<{ id: number; title: string; agent_id: string | null; created_at: string; summary: string | null }>;
+
+  for (const a of artifactRows) {
+    events.push({
+      ts: new Date(parseSqliteTs(a.created_at)).toISOString(),
+      actor: displayName(a.agent_id),
+      actor_emoji: emojiOf(a.agent_id),
+      icon: '📄',
+      iconColor: 'text-amber-400',
+      text: `${displayName(a.agent_id)} registered deliverable "${a.title}"`,
+      details: a.summary ?? undefined,
+      link: { href: `/docs/${a.id}`, label: 'Open artifact' },
+    });
+  }
+
+  events.sort((a, b) => parseSqliteTs(a.ts) - parseSqliteTs(b.ts));
+  return events;
+}
+
 export interface FlowTimelineEvent {
   ts: string;                       // ISO
   actor: string;                    // display name (Alex / Alfred / James / Mission Control)
