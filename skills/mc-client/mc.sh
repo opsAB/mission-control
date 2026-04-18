@@ -10,7 +10,7 @@
 # Export MC_URL if running somewhere other than localhost:
 #   export MC_URL=http://127.0.0.1:3001
 #
-# Auth: if MC_AGENT_TOKEN env var is set, or openclaw.json has .mc_auth_token,
+# Auth: if MC_AGENT_TOKEN env var is set, or ~/.openclaw/mc_auth_token exists,
 # it's sent as "Authorization: Bearer <token>". If MC has no token configured,
 # auth is skipped (with a server-side warning log).
 #
@@ -39,16 +39,20 @@ require_jq() {
 }
 
 # Resolve the MC auth token from (in order): MC_AGENT_TOKEN env, then
-# ~/.openclaw/openclaw.json .mc_auth_token. Empty string if neither is set;
+# ~/.openclaw/mc_auth_token (plain file). Empty string if neither is set;
 # MC will reject the request if auth is enforced server-side.
+#
+# The token used to live in openclaw.json under `mc_auth_token`, but OpenClaw
+# 2026.4.15 enforces a strict root schema and rejects unknown keys, so we moved
+# it to a sibling file that OpenClaw doesn't parse.
 resolve_token() {
   if [[ -n "${MC_AGENT_TOKEN:-}" ]]; then
     printf '%s' "$MC_AGENT_TOKEN"
     return
   fi
-  local cfg="${OPENCLAW_HOME:-$HOME/.openclaw}/openclaw.json"
-  if [[ -f "$cfg" ]] && command -v jq >/dev/null 2>&1; then
-    jq -r '.mc_auth_token // empty' "$cfg" 2>/dev/null || true
+  local tokfile="${OPENCLAW_HOME:-$HOME/.openclaw}/mc_auth_token"
+  if [[ -f "$tokfile" ]]; then
+    tr -d '\n\r' < "$tokfile"
   fi
 }
 

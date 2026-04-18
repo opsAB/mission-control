@@ -23,7 +23,7 @@ Mission Control v2 is **live and hardened** on PC2 at `http://192.168.12.53:3001
 - Cron: fixed broken FTL watchdog path, changed openclaw-update `&&` to `;`, moved whoop_sync to 06:30, moved MC digest to 07:00, consolidated logs to `~/logs/cron/` with 14-day retention
 - Purged Docker residue, disabled unused desktop services (bluetooth, cups, cups-browsed, avahi-daemon, ModemManager, gnome-remote-desktop)
 - Expanded read-only NOPASSWD sudoers
-- Token-based agent auth enabled: `mc_auth_token` in `~/.openclaw/openclaw.json`
+- Token-based agent auth enabled: `~/.openclaw/mc_auth_token` (plain file, mode 0600). Originally stashed in `openclaw.json`, moved to a sibling file on 2026-04-18 after OpenClaw 2026.4.15 added strict root-schema validation that rejected unknown keys.
 
 ### MC v2 audit (14 findings, all closed)
 All fixes live in commit `8d68b62` and follow-up `6e67890`:
@@ -82,7 +82,7 @@ Same endpoints, but **all now require auth header** when token is configured:
 Authorization: Bearer <mc_auth_token>
 ```
 
-`mc.sh` handles this automatically by reading from `$MC_AGENT_TOKEN` env or `~/.openclaw/openclaw.json .mc_auth_token`. Token is currently in openclaw.json.
+`mc.sh` handles this automatically by reading from `$MC_AGENT_TOKEN` env or `~/.openclaw/mc_auth_token` (plain file). Do not put the token back into `openclaw.json` — OpenClaw 2026.4.15+ rejects unknown root keys and will refuse to start.
 
 New subcommands in `mc.sh`:
 - `mc.sh triage-pending` — Alfred only, lists queue
