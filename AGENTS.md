@@ -33,7 +33,9 @@ A convenience CLI exists at `~/.openclaw/skills/mc-client/mc.sh` (see `skills/mc
 
 ## Auth
 
-All `/api/agent/*` and `/api/alerts/*/triage` endpoints expect an `Authorization: Bearer <token>` header. The token is read from `MC_AGENT_TOKEN` env var or `mc_auth_token` in `~/.openclaw/openclaw.json`. `mc.sh` reads these automatically, so you don't need to think about it. If MC has no token configured, auth is skipped (with a server-side warning log) — but you should still pass the header when available.
+All `/api/agent/*` and `/api/alerts/*/triage` endpoints expect an `Authorization: Bearer <token>` header. The token is read from `MC_AGENT_TOKEN` env var or `~/.openclaw/mc_auth_token` (plain file, one line, mode 0600). `mc.sh` reads these automatically, so you don't need to think about it. If MC has no token configured, auth is skipped (with a server-side warning log) — but you should still pass the header when available.
+
+**Do NOT add `mc_auth_token` (or any other MC-owned key) to `~/.openclaw/openclaw.json`.** OpenClaw 2026.4.15+ enforces a strict root schema and will refuse to start if it sees unknown keys. The sibling-file pattern (`~/.openclaw/mc_auth_token`) keeps MC state out of OpenClaw's parser.
 
 ## Hard rules
 

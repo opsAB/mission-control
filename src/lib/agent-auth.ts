@@ -2,14 +2,16 @@
 //
 // The secret is read from, in priority order:
 //   1. process.env.MC_AGENT_TOKEN            (preferred — not in a config file)
-//   2. ~/.openclaw/openclaw.json.mc_auth_token (fallback — shared with mc.sh)
+//   2. ~/.openclaw/mc_auth_token             (plain file, one line, mode 0600)
+//
+// NOTE: we used to read `mc_auth_token` from ~/.openclaw/openclaw.json, but
+// OpenClaw 2026.4.15 enforces a strict root schema and rejects unknown keys —
+// stashing the token there broke `openclaw` and the gateway. The token now
+// lives in a sibling file that OpenClaw doesn't touch.
 //
 // Agents (via mc.sh) send the token in an `Authorization: Bearer <token>` header.
 // If no token is configured anywhere, auth is SKIPPED with a one-time warning
 // (so a fresh install isn't broken). In that mode MC trusts the LAN.
-//
-// To enable enforcement: set MC_AGENT_TOKEN in the systemd unit or add
-// `mc_auth_token: "sk_..."` to openclaw.json, then update agents to send it.
 
 import fs from 'fs';
 import path from 'path';
@@ -30,14 +32,13 @@ function resolveToken(): string | null {
   }
 
   try {
-    const raw = fs.readFileSync(path.join(OPENCLAW_HOME, 'openclaw.json'), 'utf8');
-    const data = JSON.parse(raw) as { mc_auth_token?: unknown };
-    if (typeof data.mc_auth_token === 'string' && data.mc_auth_token.length > 0) {
-      cachedToken = data.mc_auth_token;
+    const fileTok = fs.readFileSync(path.join(OPENCLAW_HOME, 'mc_auth_token'), 'utf8').trim();
+    if (fileTok.length > 0) {
+      cachedToken = fileTok;
       return cachedToken;
     }
   } catch {
-    // openclaw.json missing or malformed — openclaw.ts already logs this.
+    // mc_auth_token file missing — fall through to "no token configured".
   }
 
   cachedToken = null;
@@ -64,7 +65,7 @@ export function requireAgentAuth(req: Request): Response | null {
     if (!warned) {
       warned = true;
       console.warn(
-        '[mc-auth] No MC_AGENT_TOKEN env var or mc_auth_token in openclaw.json. ' +
+        '[mc-auth] No MC_AGENT_TOKEN env var or ~/.openclaw/mc_auth_token file. ' +
         'Agent endpoints are OPEN to any LAN caller. Set one to enforce auth.'
       );
     }

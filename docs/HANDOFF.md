@@ -1,116 +1,115 @@
 # Mission Control — Session Handoff
 
-Last updated: 2026-04-17. Author: Claude Opus (1M context) in session with Alex.
+Last updated: 2026-04-18. Author: Claude Opus (1M context) in session with Alex.
 
 ## TL;DR for the next session
 
-Mission Control v2 is **live on PC2** at `http://192.168.12.53:3001`. It's an operator cockpit for Alex's OpenClaw agent workforce (Alfred orchestrator + James / Milo / Lewis / contractor specialists). MC reads OpenClaw's SQLite state read-only and overlays its own data (projects, review state, artifacts, alerts, dispatches, digest). Bidirectional API lets agents write back. Real-time via SSE. Alex triggers Alfred on demand via `/api/trigger`.
+Mission Control v2 is **live and hardened** on PC2 at `http://192.168.12.53:3001`. Last session completed a full PC2 audit + cleanup and a full MC v2 audit with 14 findings closed, plus three follow-up hardening fixes after debugging four stuck-dispatch auto-fails. Agent API now has shared-secret auth. Alfred's "triage queue" went from fiction to real. The SIGTERM/SIGKILL restart loop is fixed. Everything built, deployed, and verified as of this handoff.
 
-## Infra
+## Infra (unchanged since last handoff)
 
 - **Code:** `/c/Users/Alex/Desktop/Claude Code Projects/mission-control/` on PC1 (Windows); deployed to `~/mission-control/` on PC2 (Ubuntu)
-- **GitHub:** https://github.com/opsAB/mission-control (git credentials cached on PC1 Windows, SSH from PC1 to PC2 via `pc2` alias using `~/.ssh/mission_control_agent` key)
-- **PC2 SSH:** `ssh pc2 "<cmd>"` works. Passwordless sudo scoped to `systemctl * mission-control` only via `/etc/sudoers.d/mission-control`
-- **Service:** `mission-control.service` via systemd; survives reboot; `sudo -n systemctl restart mission-control` works over SSH non-interactively
+- **GitHub:** https://github.com/opsAB/mission-control (Claude pushes to main directly — each push requires user confirmation via harness permission gate)
+- **PC2 SSH:** `ssh pc2 "<cmd>"` works. Passwordless sudo scoped to `systemctl * mission-control`, `systemctl * openclaw-gateway`, `openclaw update`, plus read-only `ufw status`, `journalctl`, `ss`, `systemctl status *`
+- **Service:** `mission-control.service` via systemd; now shuts down cleanly on SIGTERM in ~170ms (was 90s + SIGKILL)
 - **Deploy loop:** `ssh pc2 "cd ~/mission-control && git pull && npm install --silent && npm run build && sudo -n systemctl restart mission-control"`
 
-## Stack
+## What changed this session
 
-Next.js 16 App Router + TypeScript + Tailwind + SQLite via `better-sqlite3`. Listens on `0.0.0.0:3001` on PC2 (3000 was taken by OpenClaw's own service). UFW allows 3001 from any LAN IP.
+### PC2 system-level cleanup (all done)
+- Killed orphan MC v1 (port 3000), ngrok tunnel (4040), stray health-dashboard user service (5050)
+- Deleted `~/workspace/mission-control/`, `~/.pm2/`, `~/cloudflared`, `~/cf.log`, `~/nohup.out`, `~/alex-unveil-batch-backup/`
+- Archived 6 openclaw.json backups to `~/.openclaw/backups-archive/`
+- Cron: fixed broken FTL watchdog path, changed openclaw-update `&&` to `;`, moved whoop_sync to 06:30, moved MC digest to 07:00, consolidated logs to `~/logs/cron/` with 14-day retention
+- Purged Docker residue, disabled unused desktop services (bluetooth, cups, cups-browsed, avahi-daemon, ModemManager, gnome-remote-desktop)
+- Expanded read-only NOPASSWD sudoers
+- Token-based agent auth enabled: `~/.openclaw/mc_auth_token` (plain file, mode 0600). Originally stashed in `openclaw.json`, moved to a sibling file on 2026-04-18 after OpenClaw 2026.4.15 added strict root-schema validation that rejected unknown keys.
+
+### MC v2 audit (14 findings, all closed)
+All fixes live in commit `8d68b62` and follow-up `6e67890`:
+
+**Security**
+- Path traversal on artifact serve — `path.resolve` + sep boundary
+- Artifact filename validation — explicit reject of `/`, `\`, `..`, leading-dot
+- **Shared-secret agent auth** (new `src/lib/agent-auth.ts`). All `/api/agent/*` and `/api/alerts/*/triage` require `Authorization: Bearer <token>`. `mc.sh` auto-reads token from env or openclaw.json.
+
+**Reliability**
+- SIGTERM handler on SSE streams (`src/lib/events.ts` + `src/app/api/stream/route.ts`)
+- Dispatch pickup 409 on no-op UPDATE instead of phantom broadcast
+- Migration ALTERs only swallow duplicate-column errors
+- openclaw.json parse errors now log instead of silent empty list
+- Digest persists the body actually sent (stripped markdown on Telegram fallback)
+- Digest scheduler uses "past time today + haven't fired" match, survives restarts
+- Stuck-dispatch auto-fail at 12h
+- Review actions carry `agent_id='mission-control'` so Office board doesn't drop the row
+
+**Alfred triage queue (real)**
+- New `alerts.triaged_at/triaged_by/triage_decision/triage_note` columns
+- `GET /api/alerts/pending-triage` — Alfred's queue
+- `POST /api/alerts/:id/triage` — escalated | acked
+- `/api/agent/attention` returns `queued_for_triage` (replaces the `routed_to_main` lie)
+- `trigger.ts` injects pending triage into Alfred's wake-up prompt
+- 24h scheduler fallback auto-escalates anything pending
+
+**Anti-abandonment hardening (follow-up after debugging stuck dispatches)**
+- **Nudge tick**: dispatches stuck `in_progress` with no artifact + no note >30 min re-trigger Alfred with a pointed prompt (45-min cooldown). Catches "Alfred said Writing X then turn ended" 11.5h before the 12h auto-fail.
+- **Prompt reorder**: `PROCESS_QUEUE_PROMPT` now collapses claim→work→artifact→done into one turn. Hard rule: "do not send in_progress and stop." Mirrored in AGENTS.md.
+- **Spawn-evidence check**: specialist status updates (james/milo/lewis/contractor) without a recent OpenClaw `task_runs` row raise an alert. Non-blocking — warns, doesn't reject. Catches "Alfred claimed on Milo's behalf without actually spawning Milo."
+
+### Architecture recommendation (NOT YET IMPLEMENTED)
+Workspace three-tier model, parked for a future session:
+- `~/projects/` (rename of `~/workspace/`) — human-owned project code (Five Fifteen, health, etc.)
+- `~/.openclaw/workspace-<agent>/` — per-agent scratch space
+- `~/mission-control/data/artifacts/` — finished deliverables registered in MC
+
+Currently project code is split between `~/workspace/` and `~/.openclaw/workspace/`. Agents don't have a clear rule. Consolidation needed but non-trivial (touches agent instructions, file paths in scripts).
+
+## Stack (unchanged)
+
+Next.js 16 App Router + TypeScript + Tailwind + SQLite via `better-sqlite3`. Listens on `0.0.0.0:3001`.
 
 ## Data model
 
-**MC-owned tables** (in `~/mission-control/data/mission-control.db`):
-- `projects` (5 seeded: Mission Control, Five Fifteen, Personal Ops, Health Dashboard, Research)
-- `task_overlay` — keyed on OpenClaw `task_id`: project_id, review_status, starred
-- `flow_overlay` — similar for flows
-- `artifacts` — agent-registered deliverables; served at `/api/artifacts/serve/<filename>`
-- `mc_activity` — MC-originated activity log
-- `mc_dispatched_tasks` — tasks Alex creates via `/dispatch` UI; agents poll for these
-- `alerts` — agent-to-Alex attention pings; surfaced in `/alerts` with unread badge
-- `agent_notes` — free-form notes attached to tasks/flows
-- `settings` — key/value (mission_statement, digest_time, telegram_enabled, etc.)
-- `digests` — historical morning digests
+Same tables as before, plus new columns:
+- `alerts.triaged_at`, `triaged_by`, `triage_decision`, `triage_note`
+- `mc_dispatched_tasks.last_nudged_at`
 
-**Read from OpenClaw** (read-only, at `~/.openclaw/`):
-- `tasks/runs.sqlite` → `task_runs` → MC tasks
-- `flows/registry.sqlite` → `flow_runs` → MC workflows / flow runs
-- `memory/<agent>.sqlite` → FTS-indexed agent memory; browsable in `/memory`
-- `cron/jobs.json` → recurring jobs; shown in `/workflows`
-- `openclaw.json` → agent roster (`agents.list[]`); also source of `channels.telegram.accounts.default.botToken` reused by MC for its Telegram bridge
+## Agent write API
 
-## Pages
+Same endpoints, but **all now require auth header** when token is configured:
 
-| Route | Purpose |
-|---|---|
-| `/` | Overview: live stat cards, blocked, needs-review, recurring cron, stale, recent activity |
-| `/tasks` | **Overview cards** (status counts) + Board toggle + project/agent filters |
-| `/tasks?view=board` | 4-column kanban, click card opens drawer |
-| `/tasks?status=X` | Single-column drill-down |
-| `/dispatch` | Alex creates tasks → agents pick up on heartbeat or via "Poll queue now" button |
-| `/review` | Approval queue for pending artifacts + `status=review` tasks |
-| `/docs` | Artifact table, each openable in browser |
-| `/workflows` | Cron jobs + flow runs |
-| `/memory` | Per-agent SQLite memory: file list + content viewer + full-text search |
-| `/projects` | 5 project cards → click → filtered tasks |
-| `/agents` | Agent roster cards |
-| `/office` | Pixel-art office visualizer; active dispatches light the assignee green |
-| `/coding-runs` | Flow runs with status |
-| `/alerts` | Unread alert center |
-| `/settings` | Mission statement, attention threshold, Telegram bridge, digest time/preview/send-now |
+```
+Authorization: Bearer <mc_auth_token>
+```
 
-## Agent write API (`/api/agent/*`)
+`mc.sh` handles this automatically by reading from `$MC_AGENT_TOKEN` env or `~/.openclaw/mc_auth_token` (plain file). Do not put the token back into `openclaw.json` — OpenClaw 2026.4.15+ rejects unknown root keys and will refuse to start.
 
-- `POST attention` — severity ping; alert severity reaches Telegram if `only_main_pings`=true and agent is `main`
-- `POST status` — mark a dispatch `picked_up` / `in_progress` / `done` / `failed`
-- `POST artifact` — register a deliverable file (inline content or filepath on PC2)
-- `POST note` — attach a note to a task/flow/dispatch
-- `GET dispatch?agent_id=X` — agent polls its queue
-- `POST dispatch` — claim a dispatch (set to `picked_up`)
+New subcommands in `mc.sh`:
+- `mc.sh triage-pending` — Alfred only, lists queue
+- `mc.sh triage-escalate <alert_id> <triaged_by> [note]`
+- `mc.sh triage-ack <alert_id> <triaged_by> [note]`
 
-Agents call these via the CLI at `~/.openclaw/skills/mc-client/mc.sh` on PC2. See `skills/mc-client/README.md` and `AGENTS.md` (in repo root) for conventions agents must follow.
+## Known open items
 
-## Triggering Alfred
-
-`POST /api/trigger { kind: 'process_queue' }` forks `openclaw agent --agent main --message <prompt>` on PC2 to wake Alfred immediately without waiting for his 1-hour heartbeat. UI: "Poll queue now" button on `/dispatch`, plus dispatch form's "Trigger Alfred immediately" checkbox (default on; forced on for `critical` priority).
-
-## Real-time
-
-`/api/stream` is an SSE endpoint; `<LiveUpdater />` in root layout subscribes and calls `router.refresh()` on relevant events. `broadcast()` in `src/lib/events.ts` pushes events whenever MC state changes.
-
-## Daily digest
-
-In-process scheduler (`src/lib/scheduler.ts`) ticks every 60s; fires at `settings.digest_time` (default 06:00 local). Markdown-formatted, pushed to Telegram with plain-text fallback on markdown reject. Manual via Settings → "Send digest now" button.
-
-## Known open issues / follow-ups
-
-1. **Specialist heartbeat**: only Alfred polls MC. Specialists (james, milo, lewis) rely on Alfred to delegate. This works but means Alfred must be awake. `Poll queue now` handles it.
-2. **Office visualization** only reflects dispatch-assignee activity; OpenClaw sub-agent spawns attribute to `main` in task_runs, so specialists look idle if their work comes via Alfred's sub-agent pattern (fixed by also reading `mc_dispatched_tasks` with `picked_up` status).
-3. **The 3 group-C test dispatches** were dispatched at ~19:05: Five Fifteen launch checklist (james), Bryan Johnson blood test synthesis (milo), rebalance equities (main, expected to block on E-Trade login). Alfred was triggered to process them. Status should be in MC by the time next session starts.
-4. **"Test Brief" artifact (id 1)** is a residual test file — safe to leave or delete.
-5. **Milo / Lewis memory DBs don't exist** yet — those agents haven't accumulated memory.
-6. **No auto-refresh of specialist memory DBs** — would be good if MC re-reads memory SQLite after each agent turn.
+1. **Workspace three-tier migration** — design agreed, not executed
+2. **Kernel reboot** — pending kernel 6.17.0-19 installed March 15; dropped from todo list per user request. Reboot when physically at PC2, never urgent
+3. **FTL wrapper doesn't register artifacts with MC** — it writes files to `~/mission-control/data/artifacts/ftl-intel/` (fixed path) but doesn't POST to `/api/agent/artifact`. So FTL output won't appear in MC's Docs page. Separate enhancement.
+4. **"Five Fifteen Menu — Revision 2" artifact (id 5)** has empty `file_path` — likely inline content; worth a look
+5. **Test/smoke artifacts still in DB** — ~25 test entries in `data/artifacts/` (alfred-smoke-test-*, stream-demo-*, live-demo-fact-*) are still in the DB and on disk. Fine to prune when Alex is ready.
 
 ## Rules captured to Claude's persistent memory
 
 See `C:\Users\Alex\.claude\projects\C--Users-Alex-Desktop-Claude-Code-Projects\memory\`:
 - `user_alex.md` — Alex profile, devices, PC2 = 192.168.12.53
-- `feedback_technical_decisions.md` — Alex is non-technical; don't ask him implementation questions
-- `feedback_five_fifteen_naming.md` — Always "Five Fifteen" (words), never "515"
+- `feedback_technical_decisions.md` — Alex is non-technical; make arch calls, ask user-level questions
+- `feedback_five_fifteen_naming.md` — always "Five Fifteen", never "515"
 - `project_mission_control.md` — project overview
-- `project_mission_control_v2_prefs.md` — Alfred-only pings, Telegram-only bridge, 6am digest
+- `project_mission_control_v2_prefs.md` — Alfred-only pings, Telegram-only bridge, 6am→7am digest
 - `project_openclaw_agents.md` — Alfred / James (Five Fifteen) / Milo (health) / Lewis (unused) / contractor
-
-## Next likely work (Alex's stated priorities)
-
-1. **Test pass Group C** — the 3 real-world dispatches already fired; check outcomes
-2. **PC2 system audit** — Alex wants cleanup of old files / configs from prior MC attempts with Alfred
-3. **Mobile-friendly layout** — currently desktop-only; Alex uses iPhone and might want read-only at least
-4. **Telegram→MC reply routing** — replies to MC alerts on Telegram should update the MC alert state (currently one-way)
 
 ## How to pick up
 
-1. `ssh pc2 "sudo -n systemctl status mission-control --no-pager | head -5"` → confirm service running
-2. Open `http://192.168.12.53:3001` from PC1 browser → sanity check
-3. Check `mc_dispatched_tasks` status for dispatches 3, 4, 5 → see if Alfred completed Group C
-4. Ask Alex what's next
+1. `ssh pc2 "sudo -n systemctl is-active mission-control"` → confirm running
+2. Open `http://192.168.12.53:3001` from PC1 browser → sanity check, look at `/alerts` for any stuck-dispatch / spawn-evidence warnings
+3. `mc.sh triage-pending` on PC2 → see if specialists have been pinging and Alfred's been ignoring
+4. Ask Alex what's next. Likely candidates: workspace migration, FTL→MC artifact wiring, or something new Alex thought of
