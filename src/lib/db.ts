@@ -160,6 +160,9 @@ function initSchema(db: Database.Database) {
   if (!alertInfo.some(c => c.name === 'triage_decision')) addColumn('alerts', 'triage_decision', 'TEXT');
   if (!alertInfo.some(c => c.name === 'triage_note')) addColumn('alerts', 'triage_note', 'TEXT');
 
+  const dispInfo = db.prepare("PRAGMA table_info(mc_dispatched_tasks)").all() as Array<{ name: string }>;
+  if (!dispInfo.some(c => c.name === 'last_nudged_at')) addColumn('mc_dispatched_tasks', 'last_nudged_at', 'TEXT');
+
   // Seed default settings
   const defaults: Record<string, string> = {
     mission_statement: '',

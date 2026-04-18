@@ -45,11 +45,15 @@ All `/api/agent/*` and `/api/alerts/*/triage` endpoints expect an `Authorization
 
    Anything left pending for 24h is auto-escalated by Mission Control so nothing is truly lost.
 
-2. **Heartbeat polling.** On every heartbeat, check `GET /api/agent/dispatch?agent_id=<you>` for tasks Alex sent you. If any returned:
+2. **Heartbeat polling.** On every heartbeat, check `GET /api/agent/dispatch?agent_id=<you>` for tasks Alex sent you. For each returned task, run the full sequence in ONE turn:
    - `POST /api/agent/dispatch` to claim it (sets status `picked_up`)
-   - Work on it
-   - `POST /api/agent/status` with status `in_progress` during, `done` or `failed` at end
-   - If you produced a deliverable, `POST /api/agent/artifact`
+   - **Do the actual work and write the deliverable.** No narration, no "I will now write X" pings.
+   - `POST /api/agent/artifact` to register the file (include `dispatch_id`)
+   - `POST /api/agent/status` with status `done` (or `failed` if you couldn't do it)
+
+   **Do NOT send `in_progress` and then stop.** Historical failure mode: agent claims task, sends "in_progress: Writing X" ping, turn ends without writing anything, dispatch strands until Mission Control auto-fails it 12 hours later. If you genuinely need multiple turns (rare), you may send `in_progress`, but Mission Control will nudge you back with a pointed prompt after 30 minutes if no artifact or note has landed. For anything short enough to finish in one turn, skip `in_progress` entirely.
+
+   **Specialists must actually run.** If a dispatch is assigned to james/milo/lewis/contractor, Alfred MUST spawn the specialist sub-agent before any claim/work/artifact sequence. Claiming "on behalf of" a specialist without actually spawning them is a lie to the system — the specialist's OpenClaw task_run must exist for MC to trust the status updates.
 
 3. **Post artifacts for anything reviewable — this is enforced server-side.** If a dispatched task produces any file — a menu, a brief, a report, code, a plan, notes, anything — you MUST call `mc.sh artifact ... --dispatch-id <id>` before marking the dispatch done. `/api/agent/status` **rejects** `done` on a dispatch with no linked artifact (HTTP 409 `artifact_required`).
 

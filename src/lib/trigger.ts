@@ -57,18 +57,19 @@ export function triggerAgent(agentId: string, message: string): TriggerResult {
   return { ok: true, started: true };
 }
 
-export const PROCESS_QUEUE_PROMPT = `Check Mission Control's dispatch queue and process all waiting tasks immediately. Run \`mc.sh poll main\`, then \`mc.sh poll james\`, \`mc.sh poll milo\`, \`mc.sh poll lewis\`, \`mc.sh poll contractor\`. For each returned task:
+export const PROCESS_QUEUE_PROMPT = `Check Mission Control's dispatch queue and process all waiting tasks immediately. Run \`mc.sh poll main\`, then \`mc.sh poll james\`, \`mc.sh poll milo\`, \`mc.sh poll lewis\`, \`mc.sh poll contractor\`. For each returned task, run this sequence — and do NOT split it across turns.
 
-1. Claim it: \`mc.sh pickup <dispatch_id> <agent_id>\`
-2. If assigned to you (main), handle it yourself. If assigned to a specialist, spawn/delegate via your sub-agent pattern.
-3. In-progress update: \`mc.sh status <agent_id> in_progress "<summary>" --dispatch-id <id>\`
-4. Actually do the work and produce a real deliverable file.
-5. Register the artifact BEFORE marking done: \`mc.sh artifact <agent_id> "<title>" <type> <filepath> --dispatch-id <id> --summary "<summary>"\`. The \`--dispatch-id\` flag is REQUIRED — without it the next step is rejected.
-6. Mark done: \`mc.sh status <agent_id> done "<summary>" --dispatch-id <id>\`
+1. **Claim:** \`mc.sh pickup <dispatch_id> <agent_id>\`
+2. **Do the actual work and produce the deliverable file.** This is the whole job. No status pings, no narration, no "I will now write X" messages. Just do it.
+3. **Register the artifact:** \`mc.sh artifact <agent_id> "<title>" <type> <filepath> --dispatch-id <id> --summary "<summary>"\`. The \`--dispatch-id\` flag is REQUIRED.
+4. **Mark done:** \`mc.sh status <agent_id> done "<summary>" --dispatch-id <id>\`
+
+**Hard rule — DO NOT send \`status in_progress\` and then stop.** Historically you've done this: claimed a task, sent an "in_progress: Writing X" ping, then ended your turn without ever writing anything. That leaves the dispatch stranded until Mission Control auto-fails it 12 hours later. If you send \`in_progress\`, you MUST follow with an artifact + done (or a failed) in the same turn. Better: skip in_progress entirely for tasks short enough to finish in one turn. Only use in_progress if the task genuinely needs multiple turns (rare).
 
 **Rules — enforced server-side. Violating them breaks trust with Alex.**
 
 - **Never silent-complete.** MC REJECTS \`status done\` (HTTP 409 \`artifact_required\`) on any dispatch with no artifact linked to its dispatch_id. If you hit that error, you either forgot the artifact or shouldn't be marking it done.
+- **Specialists must actually run.** If a dispatch is assigned to james/milo/lewis/contractor, you (main) MUST spawn the specialist sub-agent before the claim+work+artifact sequence. Don't claim on their behalf from your own session — that's a lie to the system. The specialist's OpenClaw task_run must exist for MC to trust the status updates.
 - **If you cannot do the work, mark it FAILED — not done.** Use \`mc.sh status <agent_id> failed "<why>" --dispatch-id <id>\`. This automatically raises a loud alert to Alex on Telegram so he knows to take over. Mark failed when: you lack credentials, you need a GUI browser / desktop app, the task needs tools you don't have, the target system is unreachable, or you reviewed it and genuinely can't execute safely.
 - **Known capability gaps — do NOT attempt, mark FAILED with a clear reason:**
   - Logging into web apps that need interactive credentials (E-Trade, banks, brokerages, anything behind SSO/MFA).

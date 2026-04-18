@@ -311,3 +311,27 @@ export function msToIso(ms: number | null): string | null {
   if (ms == null) return null;
   return new Date(ms).toISOString();
 }
+
+// Is there an OpenClaw task_run for this agent with activity in the last
+// `withinMs` window? Used to verify a specialist actually ran when Alfred
+// claims a dispatch on their behalf. Returns true if a task_runs row exists
+// whose owner_key starts with `agent:<agentId>:` and whose last_event_at (or
+// started_at/created_at) is recent enough.
+export function hasRecentOpenClawTaskForAgent(agentId: string, withinMs: number = 15 * 60 * 1000): boolean {
+  const db = openDb('tasks/runs.sqlite');
+  if (!db) return false;
+  try {
+    const cutoff = Date.now() - withinMs;
+    const row = db.prepare(`
+      SELECT task_id FROM task_runs
+      WHERE owner_key LIKE ?
+        AND COALESCE(last_event_at, ended_at, started_at, created_at) >= ?
+      LIMIT 1
+    `).get(`agent:${agentId}:%`, cutoff) as { task_id?: string } | undefined;
+    return !!row?.task_id;
+  } catch {
+    return false;
+  } finally {
+    db.close();
+  }
+}

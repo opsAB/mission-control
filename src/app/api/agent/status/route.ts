@@ -4,6 +4,11 @@ import { getDb } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import { createAlert } from '@/lib/alerts';
 import { requireAgentAuth } from '@/lib/agent-auth';
+import { hasRecentOpenClawTaskForAgent } from '@/lib/openclaw';
+
+// Agents where "Alfred claimed on their behalf without spawning" is the failure
+// mode we want to flag. Alfred himself never needs this check.
+const SPECIALIST_AGENTS = new Set(['james', 'milo', 'lewis', 'contractor']);
 
 // POST /api/agent/status
 // Body: { agent_id, task_id?, dispatch_id?, status, summary?, allow_no_artifact?, no_artifact_reason? }
@@ -84,6 +89,33 @@ export async function POST(req: NextRequest) {
         INSERT INTO agent_notes (agent_id, entity_type, entity_id, note)
         VALUES (?, 'dispatch', ?, ?)
       `).run(agent_id, String(dispatch_id), `[no artifact] ${no_artifact_reason}`);
+    }
+  }
+
+  // Spawn-evidence check: if a specialist is the reported actor but no OpenClaw
+  // task_run for that specialist exists in the recent past, someone is claiming
+  // work on the specialist's behalf without actually running them. Historical
+  // failure mode — see dispatch #14. We don't BLOCK (that would break the
+  // edge case where the check runs before OpenClaw's sub-agent row is flushed),
+  // but we raise an alert so Alex sees it.
+  if (dispatch_id && SPECIALIST_AGENTS.has(agent_id) && (status === 'in_progress' || status === 'done')) {
+    const hasEvidence = hasRecentOpenClawTaskForAgent(agent_id, 15 * 60 * 1000);
+    if (!hasEvidence) {
+      const d = db.prepare('SELECT id, title FROM mc_dispatched_tasks WHERE id = ?').get(dispatch_id) as
+        | { id: number; title: string } | undefined;
+      const subjectTitle = d?.title ?? `dispatch #${dispatch_id}`;
+      await createAlert({
+        severity: 'alert',
+        title: `Specialist claim without spawn: ${agent_id} on ${subjectTitle}`,
+        body:
+          `A status update arrived for ${agent_id} on dispatch #${dispatch_id} ("${subjectTitle}") ` +
+          `but OpenClaw has no recent task_run for ${agent_id}. This usually means Alfred claimed ` +
+          `the dispatch on ${agent_id}'s behalf without actually spawning the specialist sub-agent. ` +
+          `Work attributed to ${agent_id} here may not have happened.`,
+        agent_id: 'mc',
+        entity_type: 'dispatch',
+        entity_id: String(dispatch_id),
+      });
     }
   }
 
